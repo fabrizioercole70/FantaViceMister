@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>FVM</title>
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#102d59">
+<style>
+body{margin:0;background:#05080f;color:#fff;font:16px/1.45 -apple-system,Helvetica,Arial,sans-serif;padding:calc(env(safe-area-inset-top,0px) + 24px) 18px 40px}
+.card{background:#0d1a2e;border:1px solid #1b2e4d;border-radius:18px;padding:18px;max-width:520px;margin:0 auto}
+img{display:block;width:120px;height:120px;border-radius:26px;margin:0 auto 14px}
+h1{font-size:22px;text-align:center;margin:0 0 12px}
+.lb{color:#e2b33c;font-weight:800;letter-spacing:2px;font-size:12px;text-align:center}
+ol{padding-left:20px}li{margin:8px 0}
+b{color:#ffd76a}
+</style>
+<script>
+// Aperta dall'icona sulla Home: va subito su Leghe Fantacalcio (dove parte Fanta Vice Mister).
+// Aperta dalla guida (pulsante "APRI LA PAGINA DELL'ICONA"): mostra le istruzioni per aggiungerla alla Home.
+(function(){
+  var dallaGuida=false;
+  try{ dallaGuida = sessionStorage.getItem('fvmIcona')==='1' || /\/FantaViceMister\/(index\.html)?$/.test(new URL(document.referrer||'x:').pathname); }catch(e){}
+  if(!dallaGuida){ location.replace('https://leghe.fantacalcio.it/'); }
+})();
+</script>
+</head>
+<body>
+<div class="card">
+  <img src="apple-touch-icon.png" alt="Fanta Vice Mister">
+  <div class="lb">FANTA VICE MISTER</div>
+  <h1>Aggiungi l'icona alla Home</h1>
+  <ol>
+    <li>Tocca <b>Condividi</b>: il quadratino con la freccia verso l'alto, nella barra di Safari.</li>
+    <li>Scorri il menu e tocca <b>Aggiungi alla schermata Home</b>.</li>
+    <li>Nome: <b>FVM</b>.</li>
+    <li>Se c'è l'interruttore <b>“Apri come app web”</b>, <b>spegnilo</b>.</li>
+    <li>Tocca <b>Aggiungi</b>.</li>
+  </ol>
+  <p>Fatto questo, torna alla guida con la freccia <b>‹</b> di Safari e premi <b>ICONA AGGIUNTA ✓</b>.</p>
+  <p style="color:#aab3c2;font-size:14px">Quando aprirai l'icona dalla Home, ti porterà direttamente a Leghe Fantacalcio con Fanta Vice Mister.</p>
+</div>
+<script>try{sessionStorage.removeItem('fvmIcona')}catch(e){}</script>
+</body>
+</html>
