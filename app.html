@@ -31,16 +31,86 @@ b{color:#ffd76a}
   <img src="apple-touch-icon.png" alt="Fanta Vice Mister">
   <div class="lb">FANTA VICE MISTER</div>
   <h1>Aggiungi l'icona alla Home</h1>
-  <ol>
-    <li>Tocca <b>Condividi</b>: il quadratino con la freccia verso l'alto, nella barra di Safari.</li>
-    <li>Scorri il menu e tocca <b>Aggiungi alla schermata Home</b>.</li>
-    <li>Nome: <b>FVM</b>.</li>
-    <li>Se c'è l'interruttore <b>“Apri come app web”</b>, <b>spegnilo</b>.</li>
-    <li>Tocca <b>Aggiungi</b>.</li>
-  </ol>
-  <p>Fatto questo, torna alla guida con la freccia <b>‹</b> di Safari e premi <b>ICONA AGGIUNTA ✓</b>.</p>
-  <p style="color:#aab3c2;font-size:14px">Quando aprirai l'icona dalla Home, ti porterà direttamente a Leghe Fantacalcio con Fanta Vice Mister.</p>
+  <div id="figure"></div>
+  <p style="color:#aab3c2;font-size:14px">Se l'icona FVM c'è già sulla Home, non aggiungerla di nuovo: torna alla guida con la freccia <b>‹</b>.</p>
 </div>
-<script>try{sessionStorage.removeItem('fvmIcona')}catch(e){}</script>
+<script>
+// ---- disegni (SVG) delle schermate di Safari e Userscripts, ricavati dalle foto reali ----
+const G='#e8bd52';
+function fig(svg,cap){return `<figure style="margin:12px 0 4px;text-align:center"><svg viewBox="0 0 340 ${svg.h}" style="width:100%;max-width:340px;display:block;margin:auto;border-radius:14px">${svg.c}</svg>${cap?`<figcaption style="font-size:13px;color:#c9d2df;margin-top:6px">${cap}</figcaption>`:''}</figure>`}
+function frecciaSu(x,y,t,tx,anc){return `<path d="M${x} ${y+22} L${x} ${y+2} M${x-7} ${y+10} L${x} ${y} L${x+7} ${y+10}" stroke="${G}" stroke-width="4" fill="none" stroke-linecap="round"/><text x="${tx}" y="${y+38}" text-anchor="${anc}" font-size="14" font-weight="900" fill="${G}">${t}</text>`}
+function cerchio(x,y,r){return `<circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${G}" stroke-width="4"/>`}
+function frecciaGiu(x,y,t){return `<text x="${Math.max(x,48)}" y="${y-30}" text-anchor="middle" font-size="14" font-weight="900" fill="${G}">${t}</text><path d="M${x} ${y-24} L${x} ${y-6} M${x-7} ${y-13} L${x} ${y-4} L${x+7} ${y-13}" stroke="${G}" stroke-width="4" fill="none" stroke-linecap="round"/>`}
+const SF='font-family="-apple-system,Helvetica,Arial,sans-serif"';
+function barra(evid){
+ // evid: 'menu' | 'indietro' | 'condividi' | 'ricarica' | ''
+ let c=`<g ${SF}><rect width="340" height="150" fill="#0a1e3d"/><rect y="40" width="340" height="110" fill="#e9eef3"/>
+ <rect x="14" y="50" width="312" height="40" rx="12" fill="#fff"/>
+ <g stroke="#8a96a3" stroke-width="2.4" fill="none"><rect x="28" y="61" width="16" height="11" rx="2"/><path d="M28 77h10M28 81h7"/></g>
+ <path d="M50 64h8v-3a3 3 0 0 1 6 0v3h4v12h-18z" fill="#8a96a3"/>
+ <text x="190" y="76" text-anchor="middle" font-size="15" fill="#5b6a7a">fabrizioercole70.github.io</text>
+ <path d="M308 64a8 8 0 1 0 2 7" stroke="#5b6a7a" stroke-width="2.4" fill="none"/><path d="M304 58l6 5-6 4" stroke="#5b6a7a" stroke-width="2.4" fill="none"/>
+ <g stroke="#1a8cff" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">
+ <path d="M40 112l-9 10 9 10"/><path d="M100 112l9 10-9 10" stroke="#b9c4cf"/>
+ <path d="M162 116l8-8 8 8M170 108v18M158 116h-4v16h32v-16h-4"/>
+ <path d="M226 112c6-3 12-3 16 1c4-4 10-4 16-1v20c-6-3-12-3-16 1c-4-4-10-4-16-1z"/>
+ <rect x="292" y="114" width="16" height="16" rx="3"/><path d="M297 110h14a3 3 0 0 1 3 3v14"/></g>`;
+ if(evid==='menu') c+=cerchio(46,70,22)+frecciaGiu(46,47,'TOCCA QUI');
+ if(evid==='indietro') c+=cerchio(35,122,20)+frecciaSu(35,144,'‹ TOCCA QUI PER TORNARE INDIETRO',14,'start');
+ if(evid==='condividi') c+=cerchio(170,120,22)+frecciaSu(170,144,'TOCCA QUI: CONDIVIDI',170,'middle');
+ if(evid==='ricarica') c+=cerchio(306,70,20)+frecciaGiu(306,49,'↻');
+ const alta=(evid==='indietro'||evid==='condividi');
+ return {h:alta?190:150,c:(alta?`<rect y="150" width="340" height="40" fill="#0a1e3d"/>`:'')+c+'</g>'};
+}
+function barraRidotta(){return {h:70,c:`<g ${SF}><rect width="340" height="70" fill="#0a1e3d"/><rect y="28" width="340" height="42" fill="#e9eef3"/><text x="170" y="54" text-anchor="middle" font-size="15" fill="#5b6a7a">fabrizioercole70.github.io</text><rect x="60" y="33" width="220" height="32" rx="10" fill="none" stroke="${G}" stroke-width="4"/></g>`}}
+function menuPagina(){return {h:190,c:`<g ${SF}><rect width="340" height="190" rx="16" fill="#eef1f5"/>
+ <rect x="12" y="12" width="316" height="44" rx="12" fill="#fff"/><text x="28" y="40" font-size="16" fill="#333">Nascondi distrazioni</text>
+ <rect x="12" y="66" width="316" height="100" rx="12" fill="#fff"/><text x="28" y="96" font-size="16" fill="#333">Gestisci le estensioni</text><path d="M28 116h284" stroke="#e1e5ea"/>
+ <text x="28" y="146" font-size="16" fill="#333">Userscripts</text><text x="300" y="147" text-anchor="middle" font-size="17" fill="#1a8cff" font-weight="700">‹/›</text>
+ <rect x="16" y="120" width="308" height="42" rx="10" fill="none" stroke="${G}" stroke-width="4"/><text x="170" y="184" text-anchor="middle" font-size="13" font-weight="900" fill="#b8860b">TOCCA “Userscripts” (icona ‹/›)</text></g>`}}
+function finestrina(modo){
+ // modo: 'gialla' | 'verde' | 'elenco'
+ let barraTxt=modo==='verde'?'Userscript Installed: Tap to re-install':'Userscript Detected: Tap to install';
+ let c=`<g ${SF}><rect width="340" height="230" rx="16" fill="#3b4148"/><rect width="340" height="50" rx="16" fill="#f4f6f8"/><rect y="34" width="340" height="16" fill="#f4f6f8"/>
+ <text x="170" y="32" text-anchor="middle" font-size="16" font-weight="700" fill="#222">Userscripts</text><text x="318" y="32" text-anchor="end" font-size="16" font-weight="700" fill="#1a8cff">Fine</text>
+ <g stroke="#e9eef3" stroke-width="2.4" fill="none"><rect x="20" y="66" width="22" height="16" rx="2"/><path d="M58 80a8 8 0 0 1 2-14a10 10 0 0 1 18 2a6 6 0 0 1 0 12z"/><path d="M262 66a8 8 0 1 0 2 8"/></g>
+ <rect x="282" y="62" width="40" height="22" rx="11" fill="#5ac8fa"/><circle cx="311" cy="73" r="9" fill="#fff"/>`;
+ let y=100;
+ if(modo!=='elenco'){c+=`<rect x="0" y="${y}" width="340" height="32" fill="${modo==='verde'?'#4cd964':'#ffd60a'}"/><text x="170" y="${y+21}" text-anchor="middle" font-size="14" font-weight="700" fill="#1d3b1d">${barraTxt}</text><rect x="3" y="${y-2}" width="334" height="36" fill="none" stroke="#ff3b30" stroke-width="4"/>`;y+=44;}
+ else{c+=`<rect x="276" y="56" width="52" height="34" rx="17" fill="none" stroke="${G}" stroke-width="3"/>`}
+ c+=`<text x="20" y="${y+22}" font-size="16" fill="#9aa3ad">Demo user script</text><text x="320" y="${y+22}" text-anchor="end" font-size="13" font-weight="700" fill="#9aa3ad">JS</text>`;
+ if(modo==='elenco') c+=`<text x="20" y="${y+62}" font-size="16" fill="#fff" font-weight="700">Fanta Vice Mister</text><text x="320" y="${y+62}" text-anchor="end" font-size="13" font-weight="700" fill="#ffd60a">JS</text>`;
+ return {h:230,c:c+'</g>'};
+}
+function installa(){return {h:250,c:`<g ${SF}><rect width="340" height="250" rx="16" fill="#3b4148"/>
+ <text x="170" y="30" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">← Install Userscript</text><path d="M0 46h340" stroke="#555"/>
+ <text x="20" y="76" font-size="19" font-weight="800" fill="#fff">Fanta Vice Mister</text><text x="20" y="98" font-size="12" fill="#c9d2df">Fanta Vice Mister per Safari (iPhone e Mac)…</text>
+ <rect x="16" y="112" width="308" height="44" rx="8" fill="#2a2f35"/><text x="30" y="132" font-size="11.5" fill="#fff">⚠ Be sure you trust the author before installing…</text><text x="30" y="148" font-size="11" fill="#c9d2df">(avviso standard di Userscripts: è normale)</text>
+ <text x="170" y="178" text-anchor="middle" font-size="13" font-weight="900" fill="${G}">↑ TRASCINA SU SE NON VEDI “Install”</text>
+ <rect x="20" y="192" width="300" height="44" rx="12" fill="#1a8cff"/><text x="170" y="220" text-anchor="middle" font-size="17" font-weight="800" fill="#fff">Install</text><rect x="16" y="188" width="308" height="52" rx="14" fill="none" stroke="${G}" stroke-width="4"/></g>`}}
+function condividi(){return {h:200,c:`<g ${SF}><rect width="340" height="200" rx="16" fill="#eef1f5"/>
+ <rect x="12" y="10" width="316" height="150" rx="12" fill="#fff"/>
+ ${['Aggiungi segnalibro','Aggiungi ai preferiti','Trova nella pagina'].map((t,i)=>`<text x="28" y="${38+i*36}" font-size="15" fill="#333">${t}</text><path d="M28 ${50+i*36}h284" stroke="#e1e5ea"/>`).join('')}
+ <text x="28" y="146" font-size="15" fill="#111" font-weight="700">Aggiungi alla schermata Home</text><rect x="292" y="130" width="20" height="20" rx="4" fill="none" stroke="#333" stroke-width="2"/><path d="M302 134v12M296 140h12" stroke="#333" stroke-width="2"/>
+ <rect x="16" y="122" width="308" height="36" rx="10" fill="none" stroke="${G}" stroke-width="4"/>
+ <text x="170" y="186" text-anchor="middle" font-size="13" font-weight="900" fill="#b8860b">↑ SCORRI IL MENU VERSO L'ALTO PER TROVARLA</text></g>`}}
+function aggiungiHome(){return {h:130,c:`<g ${SF}><rect width="340" height="130" rx="16" fill="#eef1f5"/>
+ <text x="20" y="32" font-size="15" fill="#1a8cff">Annulla</text><text x="170" y="32" text-anchor="middle" font-size="15" font-weight="700" fill="#222">Aggiungi a Home</text><text x="320" y="32" text-anchor="end" font-size="15" font-weight="800" fill="#1a8cff">Aggiungi</text>
+ <rect x="252" y="12" width="76" height="30" rx="8" fill="none" stroke="${G}" stroke-width="4"/>
+ <rect x="0" y="52" width="340" height="62" fill="#fff"/><rect x="18" y="60" width="46" height="46" rx="11" fill="#102d59"/><circle cx="41" cy="83" r="16" fill="none" stroke="${G}" stroke-width="2.5"/><rect x="35" y="75" width="12" height="16" rx="2" fill="#3fae4a"/>
+ <text x="80" y="82" font-size="17" fill="#111">FVM</text><text x="80" y="102" font-size="12" fill="#9aa3ad">https://fabrizioercole70.github.i…</text></g>`}}
+function impostazioni(){return {h:120,c:`<g ${SF}><rect width="340" height="120" rx="16" fill="#f2f2f7"/>
+ <text x="20" y="30" font-size="14" fill="#1a8cff">‹ Estensioni</text><text x="170" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="#111">Userscripts</text>
+ <rect x="12" y="50" width="316" height="52" rx="12" fill="#fff"/><text x="28" y="82" font-size="16" fill="#111">Consenti estensione</text>
+ <rect x="262" y="62" width="52" height="30" rx="15" fill="#34c759"/><circle cx="299" cy="77" r="13" fill="#fff"/>
+ <rect x="256" y="57" width="64" height="40" rx="20" fill="none" stroke="${G}" stroke-width="3"/></g>`}}
+
+document.getElementById('figure').innerHTML=
+ '<p><b>1.</b> Tocca <b>Condividi</b> nella barra in basso. Se vedi solo l\'indirizzo, toccalo prima per aprire la barra.</p>'+fig(barra('condividi'))+
+ '<p><b>2.</b> Scorri il menu verso l\'alto e tocca <b>Aggiungi alla schermata Home</b>.</p>'+fig(condividi())+
+ '<p><b>3.</b> Tocca <b>Aggiungi</b> in alto a destra.</p>'+fig(aggiungiHome())+
+ '<p><b>4.</b> Riapri <b>Safari</b> e torna alla guida con la freccia <b>‹</b>.</p>'+fig(barra('indietro'));
+try{sessionStorage.removeItem('fvmIcona')}catch(e){}
+</script>
 </body>
 </html>

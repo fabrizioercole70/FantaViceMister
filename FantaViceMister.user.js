@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fanta Vice Mister
 // @description  Fanta Vice Mister per Safari (iPhone e Mac) e browser PC: ordine della panchina, controllo e invio su FLE, area admin.
-// @version      1.0.0
+// @version      1.0.1
 // @updateURL    https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @downloadURL  https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @match        https://leghe.fantacalcio.it/*
@@ -16,13 +16,13 @@
   // 1.0: sulla pagina della guida lo script lascia solo un segnale,
   // cosi la guida capisce da sola che Fanta Vice Mister e installato e attivo.
   if (location.hostname === "fabrizioercole70.github.io") {
-    try { document.documentElement.setAttribute("data-fvm-versione", "1.0.0"); } catch (e) {}
+    try { document.documentElement.setAttribute("data-fvm-versione", "1.0.1"); } catch (e) {}
     return;
   }
   if (window.__FVM_SAFARI__) return;
   window.__FVM_SAFARI__ = true;
 
-  var VERSIONE = "1.0.0";
+  var VERSIONE = "1.0.1";
   var PREFISSO = "fvm_";
   // Il codice admin non e scritto qui: c'e solo la sua impronta SHA-256 (il file e pubblico su GitHub).
   var CODICE_ADMIN_SHA256 = "9c080dfff5da901c881a1688fc60dbee0e020eff2635e82a775833a252f49f42";
@@ -134,7 +134,20 @@
     return comp ? "https://leghe.fantacalcio.it/" + slug + "/view/competition/" + comp + "/lineup" : "";
   }
   function controllaPagina() {
-    if (suFle()) return;
+    if (suFle()) {
+      // 1.0.1: SOLO FLE con competizione non ancora nota. FLE porta alla pagina
+      // /view/competition/<id>/dashboard: da li apriamo il campo di quella competizione.
+      var vai = sLeggi("vai_campo_fle");
+      if (vai && Date.now() - Number(vai) > 30000) { sScrivi("vai_campo_fle", null); vai = null; }
+      var mc = location.pathname.match(/\/view\/competition\/(\d+)\//);
+      if (vai && mc && !suFormazione()) {
+        sScrivi("vai_campo_fle", null);
+        log("SOLO FLE CAMPO", { comp: Number(mc[1]), da: location.pathname });
+        chiudiPannello();
+        location.assign(fleLineupUrl(Number(mc[1])));
+      }
+      return;
+    }
     var m = location.pathname.match(/^\/([^\/]+)\/view\/competition\/(\d+)\/lineup/);
     if (m) {
       impostaLega(m[1]);
@@ -249,6 +262,8 @@
         if (pl) {
           var dto = pl.teamLineupDto || {};
           ctl.payload = { comp: Number(dto.idcomp || 0), tid: Number(dto.tid || 0), mday: dto.mday, cmday: dto.cmday, ids: (pl.lineUpInfo || []).map(function (x) { return Number(x && x.pid); }).filter(Boolean) };
+          var fNota = leggi("fle", {}) || {};
+          if (!Number(fNota.comp || 0) && ctl.payload.comp) { fNota.comp = ctl.payload.comp; scrivi("fle", fNota); log("COMPETIZIONE FLE", { comp: ctl.payload.comp, da: "campo FLE" }); }
         }
       }
     } catch (e) {}
@@ -693,6 +708,7 @@
   }
   function connesso() {
     if (suLogin()) return false;
+    if (slugDaPagina()) return true;
     if (elementoTesto(/^accedi$/i)) return false;
     // Se non siamo nella pagina di login e il sito non mostra piu "ACCEDI",
     // consideriamo la sessione autenticata anche nella pagina selettore leghe.
@@ -726,12 +742,13 @@
   }
 
   // ---------------------------------------------------------------- schermata principale
-  var pannello = null;
-  function chiudiPannello() { if (pannello) { pannello.remove(); pannello = null; } }
+  var pannello = null, pannelloPrincipale = false, ultimoConn = null;
+  function chiudiPannello() { if (pannello) { pannello.remove(); pannello = null; } pannelloPrincipale = false; }
   function apriPannello() {
     monta();
     if (!radice) return;
     chiudiPannello();
+    pannelloPrincipale = true;
     pannello = document.createElement("div");
     pannello.className = "ov";
     radice.appendChild(pannello);
@@ -802,6 +819,7 @@
     var u = leggi("ultima", null);
     var invii = leggi("invii", []);
     var conn = connesso();
+    ultimoConn = conn;
     var modo = leggi("modo", "lega_fle");
     var h = "";
     h += "<div class='hero'><img src='" + LOGO_FVM + "' alt='FVM'><div style='flex:1'><button class='x' data-a='chiudi'>CHIUDI</button><div class='ht'>FANTA VICE<br>MISTER</div><div class='hs'>v" + VERSIONE + " · Stagione 2026/27</div></div></div>";
@@ -813,6 +831,7 @@
           ? "<div class='mu'>• Sei connesso ✓</div><div class='mu'>• " + (slug ? "Lega riconosciuta: " + esc(nomeLega(slug)) : "Entra una volta nella tua lega con <b>CAMBIA LEGA</b>: poi la ricordo da solo.") + "</div>"
           : "<div class='mu'>• Ultimo passo: tocca <b>ACCEDI</b> qui sotto ed entra con username e password di Fantacalcio. Dopo il login torni qui da solo.</div>") +
         "<div class='mu'>• Da ora apri Fanta Vice Mister dall'icona <b>FVM</b> sulla Home.</div>" +
+        "<div class='mu'>• Dalle pagine di Fantacalcio, il bottone tondo <b>FVM</b> sul bordo destro ti riporta sempre qui.</div>" +
         "<button class='bt oro' data-a='benvenuto'>HO CAPITO</button></div>";
     }
     h += "<div class='cd'><div class='lb'>ACCESSO PIATTAFORMA</div>" +
@@ -911,6 +930,7 @@
       // modificare e salvare la formazione FLE normalmente.
       var fSolo = leggi("fle", {}) || {};
       var destinazioneFle = Number(fSolo.comp || 0) ? fleLineupUrl(Number(fSolo.comp)) : fleDiscoveryUrl();
+      if (!Number(fSolo.comp || 0)) sScrivi("vai_campo_fle", Date.now());
       log("PASSO 1 SOLO FLE", { comp: Number(fSolo.comp || 0), diretto: !!Number(fSolo.comp || 0) });
       chiudiPannello();
       location.assign(destinazioneFle);
@@ -1386,6 +1406,7 @@
   function apriAdmin() {
     monta();
     chiudiPannello();
+    pannelloPrincipale = false;
     pannello = document.createElement("div");
     pannello.className = "ov";
     radice.appendChild(pannello);
@@ -1542,6 +1563,7 @@
     sScrivi("apri", null); sScrivi("flash", null);
     if (apri === "admin") { apriAdmin(); return; }
     if (apri === "main") { apriPannello(); if (flash) avviso(flash); return; }
+    if (suFle() && sLeggi("vai_campo_fle")) { controllaPagina(); return; }
     if (!suFormazione() && !suLogin()) apriPannello();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", avvia); else avvia();
@@ -1550,10 +1572,17 @@
   setInterval(function () {
     if (!host || !host.isConnected) { host = null; radice = null; pannello = null; fab = null; monta(); }
     aggiornaFab();
+    // 1.0.1: se lo stato di accesso cambia dopo il caricamento della pagina, aggiorna la schermata
+    if (pannello && pannelloPrincipale && ultimoConn !== null && connesso() !== ultimoConn) aggiornaPannello();
     if (location.pathname !== ultimaPagina) {
       ultimaPagina = location.pathname;
       log("PAGINA", ultimaPagina);
       controllaPagina();
+      if (sLeggi("ritorno_login") && !suLogin() && !elementoTesto(/^accedi$/i)) {
+        sScrivi("ritorno_login", null);
+        log("ACCESSO", "gia collegato · ritorno automatico a FVM");
+        apriPannello();
+      }
       // 0.3.7: il selettore di Leghe Fantacalcio cambia pagina come SPA.
       // Il blocco modalita deve quindi scattare anche dopo un cambio manuale
       // effettuato mentre il pannello FVM e chiuso, non solo all'avvio/FVM.
