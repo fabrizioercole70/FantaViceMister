@@ -1,10 +1,11 @@
 // ==UserScript==
 // @name         Fanta Vice Mister
 // @description  Fanta Vice Mister per Safari (iPhone e Mac) e browser PC: ordine della panchina, controllo e invio su FLE, area admin.
-// @version      0.4.0
+// @version      1.0.0
 // @updateURL    https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @downloadURL  https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @match        https://leghe.fantacalcio.it/*
+// @match        https://fabrizioercole70.github.io/FantaViceMister/*
 // @run-at       document-start
 // @inject-into  page
 // ==/UserScript==
@@ -12,10 +13,16 @@
 (function () {
   "use strict";
   if (window.top !== window) return;
+  // 1.0: sulla pagina della guida lo script lascia solo un segnale,
+  // cosi la guida capisce da sola che Fanta Vice Mister e installato e attivo.
+  if (location.hostname === "fabrizioercole70.github.io") {
+    try { document.documentElement.setAttribute("data-fvm-versione", "1.0.0"); } catch (e) {}
+    return;
+  }
   if (window.__FVM_SAFARI__) return;
   window.__FVM_SAFARI__ = true;
 
-  var VERSIONE = "0.4.0";
+  var VERSIONE = "1.0.0";
   var PREFISSO = "fvm_";
   // Il codice admin non e scritto qui: c'e solo la sua impronta SHA-256 (il file e pubblico su GitHub).
   var CODICE_ADMIN_SHA256 = "9c080dfff5da901c881a1688fc60dbee0e020eff2635e82a775833a252f49f42";
@@ -798,6 +805,16 @@
     var modo = leggi("modo", "lega_fle");
     var h = "";
     h += "<div class='hero'><img src='" + LOGO_FVM + "' alt='FVM'><div style='flex:1'><button class='x' data-a='chiudi'>CHIUDI</button><div class='ht'>FANTA VICE<br>MISTER</div><div class='hs'>v" + VERSIONE + " · Stagione 2026/27</div></div></div>";
+    // 1.0: riquadro di benvenuto alla prima apertura (sostituisce i passi login della guida)
+    if (!leggi("benvenuto_ok", false)) {
+      h += "<div class='cd' style='border:2px solid #3fae4a'><div class='lb' style='color:#4ade80'>BENVENUTO · INSTALLAZIONE COMPLETATA ✓</div>" +
+        "<div class='t2'>Fanta Vice Mister è attivo su questo iPhone</div>" +
+        (conn
+          ? "<div class='mu'>• Sei connesso ✓</div><div class='mu'>• " + (slug ? "Lega riconosciuta: " + esc(nomeLega(slug)) : "Entra una volta nella tua lega con <b>CAMBIA LEGA</b>: poi la ricordo da solo.") + "</div>"
+          : "<div class='mu'>• Ultimo passo: tocca <b>ACCEDI</b> qui sotto ed entra con username e password di Fantacalcio. Dopo il login torni qui da solo.</div>") +
+        "<div class='mu'>• Da ora apri Fanta Vice Mister dall'icona <b>FVM</b> sulla Home.</div>" +
+        "<button class='bt oro' data-a='benvenuto'>HO CAPITO</button></div>";
+    }
     h += "<div class='cd'><div class='lb'>ACCESSO PIATTAFORMA</div>" +
       (conn ? "<div style='color:#4ade80;font-size:20px;font-weight:900;margin-top:6px'>● Connesso ✓</div>" : "<div style='color:#fbbf24;font-size:20px;font-weight:900;margin-top:6px'>● Non connesso</div>") +
       "<div style='color:#e2b33c;font-weight:800'>Leghe Fantacalcio</div>" +
@@ -842,6 +859,7 @@
         ev.stopPropagation();
         var a = el.getAttribute("data-a");
         if (a === "chiudi") chiudiPannello();
+        if (a === "benvenuto") { scrivi("benvenuto_ok", true); log("BENVENUTO", "chiuso"); aggiornaPannello(); }
         if (a === "formazione") vaiAllaFormazione();
         if (a === "modo") {
           var nuovoModo = el.getAttribute("data-m");
