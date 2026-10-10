@@ -18,11 +18,20 @@ b{color:#ffd76a}
 </style>
 <script>
 // Aperta dall'icona sulla Home: va subito su Leghe Fantacalcio (dove parte Fanta Vice Mister).
-// Aperta dalla guida (pulsante "APRI LA PAGINA DELL'ICONA"): mostra le istruzioni per aggiungerla alla Home.
+//  - con ?lega=<nome-lega> (icona creata da FVM con "METTI FVM SULLA HOME"): bacheca di quella lega;
+//  - senza: leghe.fantacalcio.it/ (FVM porta poi alla lega in uso).
+// Aperta da FVM (#prepara) o dalla guida: mostra le istruzioni per aggiungerla alla Home. Il segno #prepara viene tolto
+// SUBITO dall'indirizzo, cosi l'icona salva solo app.html?lega=... e, toccata, apre direttamente la lega.
+// Sicurezza: il nome della lega e accettato solo se fatto di lettere minuscole, numeri e trattini; la destinazione e
+// sempre e solo https://leghe.fantacalcio.it (nessun altro sito).
+var FVM_LEGHE='https://leghe.fantacalcio.it';
+var FVM_LEGA='';
 (function(){
-  var dallaGuida=false;
-  try{ dallaGuida = sessionStorage.getItem('fvmIcona')==='1' || /\/FantaViceMister\/(index\.html)?$/.test(new URL(document.referrer||'x:').pathname); }catch(e){}
-  if(!dallaGuida){ location.replace('https://leghe.fantacalcio.it/'); }
+  try{ var l=(new URLSearchParams(location.search).get('lega')||'').toLowerCase(); if(/^[a-z0-9-]{1,100}$/.test(l)) FVM_LEGA=l; }catch(e){}
+  var prepara=location.hash==='#prepara', dallaGuida=false;
+  if(prepara){ try{sessionStorage.setItem('fvmIcona','1')}catch(e){} try{history.replaceState(null,'',location.pathname+location.search)}catch(e){} }
+  try{ dallaGuida = prepara || sessionStorage.getItem('fvmIcona')==='1' || /\/FantaViceMister\/(index\.html|iphone\.html)?$/.test(new URL(document.referrer||'x:').pathname); }catch(e){}
+  if(!dallaGuida){ location.replace(FVM_LEGHE+(FVM_LEGA?'/'+FVM_LEGA+'/view/dashboard':'/')); }
 })();
 </script>
 </head>
@@ -32,7 +41,7 @@ b{color:#ffd76a}
   <div class="lb">FANTA VICE MISTER</div>
   <h1>Aggiungi l'icona alla Home</h1>
   <div id="figure"></div>
-  <p style="color:#aab3c2;font-size:14px">Se l'icona FVM c'è già sulla Home, non aggiungerla di nuovo: torna alla guida con la freccia <b>‹</b>.</p>
+  <p style="color:#aab3c2;font-size:14px">Avevi già un'icona FVM? Dopo aver aggiunto questa puoi togliere la vecchia: tienila premuta e scegli di <b>rimuoverla</b> (togliere l'icona non cancella Fanta Vice Mister né i tuoi dati).</p>
 </div>
 <script>
 // ---- disegni (SVG) delle schermate di Safari e Userscripts, ricavati dalle foto reali ----
@@ -99,17 +108,28 @@ function aggiungiHome(){return {h:130,c:`<g ${SF}><rect width="340" height="130"
  <rect x="252" y="12" width="76" height="30" rx="8" fill="none" stroke="${G}" stroke-width="4"/>
  <rect x="0" y="52" width="340" height="62" fill="#fff"/><rect x="18" y="60" width="46" height="46" rx="11" fill="#102d59"/><circle cx="41" cy="83" r="16" fill="none" stroke="${G}" stroke-width="2.5"/><rect x="35" y="75" width="12" height="16" rx="2" fill="#3fae4a"/>
  <text x="80" y="82" font-size="17" fill="#111">FVM</text><text x="80" y="102" font-size="12" fill="#9aa3ad">https://fabrizioercole70.github.i…</text></g>`}}
+// iOS recenti: interruttore "Apri come app web" nella stessa finestra. Deve restare SPENTO (grigio): solo cosi l'icona
+// apre Safari, dove funziona Userscripts con i tuoi dati e il tuo accesso.
+function appWeb(){return {h:96,c:`<g ${SF}><rect width="340" height="96" rx="16" fill="#eef1f5"/>
+ <rect x="12" y="12" width="316" height="52" rx="12" fill="#fff"/><text x="28" y="44" font-size="16" fill="#111">Apri come app web</text>
+ <rect x="262" y="23" width="52" height="30" rx="15" fill="#e3e3e8"/><circle cx="277" cy="38" r="13" fill="#fff" stroke="#d1d1d6"/>
+ <rect x="256" y="18" width="64" height="40" rx="20" fill="none" stroke="${G}" stroke-width="3"/>
+ <text x="170" y="86" text-anchor="middle" font-size="13" font-weight="900" fill="#b8860b">DEVE ESSERE SPENTO (GRIGIO)</text></g>`}}
 function impostazioni(){return {h:120,c:`<g ${SF}><rect width="340" height="120" rx="16" fill="#f2f2f7"/>
  <text x="20" y="30" font-size="14" fill="#1a8cff">‹ Estensioni</text><text x="170" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="#111">Userscripts</text>
  <rect x="12" y="50" width="316" height="52" rx="12" fill="#fff"/><text x="28" y="82" font-size="16" fill="#111">Consenti estensione</text>
  <rect x="262" y="62" width="52" height="30" rx="15" fill="#34c759"/><circle cx="299" cy="77" r="13" fill="#fff"/>
  <rect x="256" y="57" width="64" height="40" rx="20" fill="none" stroke="${G}" stroke-width="3"/></g>`}}
 
+var nomeLega=FVM_LEGA?FVM_LEGA.replace(/-+/g,' ').trim().toUpperCase():'';
 document.getElementById('figure').innerHTML=
+ (nomeLega?'<p style="text-align:center;background:#0b2346;border:1px solid #31517b;border-radius:14px;padding:10px">Questa icona apre la tua lega<br><b>'+nomeLega+'</b></p>'
+          :'<p style="text-align:center;background:#0b2346;border:1px solid #31517b;border-radius:14px;padding:10px">Questa icona apre <b>Leghe Fantacalcio</b>. Per l\'icona della tua lega usa <b>METTI FVM SULLA HOME</b> nella schermata di Fanta Vice Mister.</p>')+
  '<p><b>1.</b> Tocca <b>Condividi</b> nella barra in basso. Se vedi solo l\'indirizzo, toccalo prima per aprire la barra.</p>'+fig(barra('condividi'))+
  '<p><b>2.</b> Scorri il menu verso l\'alto e tocca <b>Aggiungi alla schermata Home</b>.</p>'+fig(condividi())+
- '<p><b>3.</b> Tocca <b>Aggiungi</b> in alto a destra.</p>'+fig(aggiungiHome())+
- '<p><b>4.</b> Riapri <b>Safari</b> e torna alla guida con la freccia <b>‹</b>.</p>'+fig(barra('indietro'));
+ '<p><b>3.</b> Il nome <b>FVM</b> e il logo sono già pronti. Se vedi <b>Apri come app web</b>, deve essere <b>spento</b> (grigio): se è verde, toccalo una volta.</p>'+fig(appWeb())+
+ '<p><b>4.</b> Tocca <b>Aggiungi</b> in alto a destra.</p>'+fig(aggiungiHome())+
+ '<p><b>5.</b> Fatto. Da ora apri Fanta Vice Mister toccando l\'icona <b>FVM</b> sulla Home.</p>';
 try{sessionStorage.removeItem('fvmIcona')}catch(e){}
 </script>
 </body>
