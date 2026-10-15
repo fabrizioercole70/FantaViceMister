@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#102d59">
 <title>Fanta Vice Mister</title>
+<meta name="description" content="Fanta Vice Mister: l'assistente per consegnare la formazione nella tua lega e su FantaLegaEuropa (FLE).">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="apple-touch-icon.png">
 <style>
@@ -25,7 +26,7 @@ main{max-width:560px;margin:auto;padding:calc(18px + env(safe-area-inset-top)) 1
 .logo{width:110px;height:110px;margin:0 auto 12px;border-radius:24px;overflow:hidden;box-shadow:0 8px 22px rgba(0,0,0,.35)}
 .logo img{width:100%;height:100%;object-fit:cover;display:block}
 h1{text-align:center;font-size:27px;margin:0 0 5px;color:var(--gold2)}
-.sub{text-align:center;color:var(--white);margin:0 0 22px;font-weight:600}
+.sub{text-align:center;color:var(--white);margin:0 0 18px;font-weight:600;line-height:1.4}
 .card{background:rgba(16,45,89,.96);border:2px solid var(--line);border-radius:22px;padding:20px 20px 22px;
 box-shadow:0 10px 28px rgba(0,0,0,.25);margin-bottom:16px}
 .card.mine{border-color:var(--gold)}
@@ -33,8 +34,9 @@ box-shadow:0 10px 28px rgba(0,0,0,.25);margin-bottom:16px}
 .kicker{font-size:13px;color:var(--gold2);font-weight:900;letter-spacing:.08em}
 .badge{display:none;font-size:12px;font-weight:900;color:#102d59;background:var(--gold2);border-radius:20px;padding:3px 10px}
 .card.mine .badge{display:inline-block}
+.ver{display:inline-block;font-size:12px;font-weight:900;color:#0b2346;background:#7ee2a0;border-radius:20px;padding:3px 10px;margin-left:6px;vertical-align:middle}
 .card h2{font-size:23px;margin:6px 0 8px;color:#fff}
-.card p{line-height:1.45;color:#f7f8fb;margin:0 0 4px}
+.card p{line-height:1.45;color:#f7f8fb;margin:0 0 6px}
 ol.steps{margin:14px 0 4px;padding:0;list-style:none;counter-reset:s}
 ol.steps li{counter-increment:s;display:flex;gap:12px;align-items:center;padding:7px 0;font-size:17px;font-weight:700}
 ol.steps li::before{content:counter(s);flex:0 0 32px;height:32px;border-radius:50%;background:var(--gold2);color:#102d59;
@@ -43,30 +45,67 @@ display:flex;align-items:center;justify-content:center;font-weight:900}
 a.btn,span.btn{width:100%;border:0;border-radius:15px;padding:15px 16px;font-size:17px;font-weight:900;text-align:center;text-decoration:none;display:block;margin-top:14px}
 .primary{background:linear-gradient(180deg,var(--gold2),var(--gold));color:#102d59}
 .secondary{background:#173f74;color:#fff;border:1px solid #3f68a0}
+.guide{background:#f8f6ef;color:#102d59;border:2px solid var(--gold)}
 .off{background:#13294a;color:var(--muted);border:1px dashed var(--line);cursor:default}
-footer{text-align:center;color:var(--muted);font-size:12px;margin-top:22px}
+details{background:rgba(16,45,89,.96);border:1px solid var(--line);border-radius:16px;margin-bottom:10px;overflow:hidden}
+summary{list-style:none;cursor:pointer;padding:15px 18px;font-weight:900;font-size:16px;color:#fff;display:flex;justify-content:space-between;gap:10px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--gold2);font-size:20px;line-height:1}
+details[open] summary::after{content:"–"}
+.dc{padding:0 18px 16px;line-height:1.5;color:#eef2f8;font-size:15px}
+.dc ul{margin:6px 0;padding-left:20px}.dc li{margin:4px 0}
+.mode{border-left:4px solid var(--gold2);padding:6px 10px;margin:8px 0;background:#0b2346;border-radius:8px}
+h3.sez{color:var(--gold2);font-size:15px;letter-spacing:.06em;margin:22px 4px 10px}
+a{color:var(--gold2)}
+footer{text-align:center;color:var(--muted);font-size:12px;margin-top:22px;line-height:1.5}
+.dati{font-size:14px;color:#c9d2df;line-height:1.5}
 </style>
 </head>
 <body>
 <main>
   <div class="logo"><img src="apple-touch-icon.png" alt="Fanta Vice Mister"></div>
   <h1>Fanta Vice Mister</h1>
-  <p class="sub">Scegli il tuo dispositivo</p>
+  <p class="sub">L'assistente per consegnare la formazione nella tua lega e su <b>FantaLegaEuropa (FLE)</b>, senza doverla rifare due volte.</p>
+
+  <section class="card">
+    <div class="top"><span class="kicker">COS'È</span></div>
+    <p>Prepari la formazione <b>una sola volta</b>, nella pagina ufficiale della tua lega. Fanta Vice Mister la legge, la controlla
+      rispetto alla tua rosa FLE e, se lo scegli tu, la consegna anche su FantaLegaEuropa, mantenendo l'ordine della panchina.</p>
+    <p>Lavora sempre nelle <b>pagine ufficiali</b> di Leghe Fantacalcio e Fantaclub, aperte dentro l'app: l'accesso lo fai lì, con il tuo account.
+      Fanta Vice Mister <b>non legge e non salva la tua password</b>: per leggere e consegnare le formazioni usa la sessione aperta in quelle pagine,
+      che resta nel telefono come in un normale browser finché non tocchi <b>DISCONNETTI</b>.</p>
+    <p class="dati"><b>Dati di servizio.</b> Ogni volta che una formazione viene salvata su FLE (LEGA + FLE, SOLO FLE o MODIFICA SU FLE),
+      l'app invia al Foglio Google degli amministratori FLE una riga con: data e ora, tipo di invio, lega, nome e codice FLE della squadra,
+      competizione e giornata FLE, modulo e versione dell'app. Non invia password né i giocatori schierati; con SOLO LEGA non invia nulla.
+      Questi dati servono agli amministratori FLE per controllare le consegne; li consultano nel Foglio, che l'app usa solo per registrare: la lettura delle registrazioni dall'app è disattivata.</p>
+  </section>
+
+  <h3 class="sez">SCEGLI IL TUO DISPOSITIVO</h3>
 
   <section class="card" id="android">
-    <div class="top"><span class="kicker">ANDROID</span><span class="badge">IL TUO TELEFONO</span></div>
+    <div class="top"><span class="kicker">ANDROID <span class="ver">VERSIONE 1.3.1</span></span><span class="badge">IL TUO TELEFONO</span></div>
     <h2>Fanta Vice Mister per Android</h2>
     <ol class="steps">
       <li>Scarica e installa</li>
-      <li>Apri Fanta Vice Mister</li>
-      <li>Chiudi completamente l'app</li>
-      <li>Riaprila</li>
+      <li>Aprila con Internet attivo e attendi qualche istante</li>
+      <li>Chiudila completamente</li>
+      <li>Riaprila: sotto il titolo compare v1.3.1</li>
     </ol>
-    <a class="btn primary" href="./android/">Scarica per Android</a>
+    <a class="btn primary" href="./android/">Scarica per Android e guide</a>
     <div class="note">
-      <b>Se richiesto</b> dal telefono, potrebbe essere necessario autorizzare l'installazione dell'app dalla fonte utilizzata.<br><br>
-      <b>Chiudere completamente</b> vuol dire toglierla anche dalle app aperte di recente.
-      Alla riapertura Fanta Vice Mister verifica e applica automaticamente gli eventuali aggiornamenti disponibili.
+      <b>Prima installazione:</b> al primo avvio l'app scarica da sola l'aggiornamento alla 1.3.1. Serve la connessione a Internet:
+      lasciala aperta qualche istante prima di chiuderla. Se dopo la riapertura vedi ancora un numero più basso, ripeti apertura, attesa e chiusura.
+    </div>
+    <div class="note">
+      <b>Hai già Fanta Vice Mister?</b> Non serve reinstallarla. Aprila con la connessione a Internet attiva e attendi: quando nella schermata
+      principale compare <b>Aggiornamento Fanta Vice Mister pronto</b>, tocca <b>AGGIORNA ORA</b> e aspetta il riavvio. Se il riquadro non compare,
+      chiudi completamente l'app e riaprila.
+    </div>
+    <div class="note">
+      <b>1.1.0 o 1.3.1?</b> Il file che scarichi è l'app di installazione, <b>versione 1.1.0</b>. Le versioni successive arrivano come
+      aggiornamenti interni, scaricati dall'app via Internet. Per questo in <b>Impostazioni › App › Fanta Vice Mister</b> Android continua a
+      indicare 1.1.0: <b>non è un errore</b>. La versione che conta è quella scritta dentro l'app, sotto il titolo: <b>v1.3.1</b>.
+      La guida completa è nella pagina Android.
     </div>
   </section>
 
@@ -85,7 +124,115 @@ footer{text-align:center;color:var(--muted);font-size:12px;margin-top:22px}
     <span class="btn off" aria-disabled="true">In arrivo</span>
   </section>
 
-  <footer>FantaLegaEuropa · Fanta Vice Mister</footer>
+  <h3 class="sez">COME FUNZIONA (ANDROID 1.3.1)</h3>
+
+  <details>
+    <summary>Piattaforme e integrazioni</summary>
+    <div class="dc">
+      <ul>
+        <li><b>Leghe Fantacalcio</b>: la formazione della tua lega si fa nella pagina ufficiale e Fanta Vice Mister la legge dopo il salvataggio.</li>
+        <li><b>Fantaclub</b>: la formazione si consegna nella pagina ufficiale di Consegna della tua lega Fantaclub, che Fanta Vice Mister riconosce.</li>
+        <li><b>FantaLegaEuropa (FLE)</b>: si trova su Leghe Fantacalcio. Fanta Vice Mister confronta la formazione con la tua rosa FLE da 25 e la consegna nelle competizioni FLE della tua squadra.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>Le tre modalità di consegna</summary>
+    <div class="dc">
+      <div class="mode"><b>LEGA + FLE</b> · salvi nella tua lega; l'app legge la formazione, la controlla rispetto alla tua rosa FLE (PASSO 2)
+        e, quando tocchi CONFERMA E INVIA A FLE (PASSO 3), la consegna anche su FLE.</div>
+      <div class="mode"><b>SOLO LEGA</b> · salvi soltanto nella tua lega. FLE non viene toccata. Funziona sempre. Dopo il salvataggio puoi
+        ancora toccare <b>MANDA ANCHE A FLE</b>, se sei autorizzato.</div>
+      <div class="mode"><b>SOLO FLE</b> · salvi direttamente la formazione FLE, senza cambiare quella della tua lega.</div>
+      La modalità si sceglie in alto nella pagina della formazione (per Fantaclub, nella barra FVM). Dopo un invio a FLE riuscito compare
+      <b>MODIFICA SU FLE</b>, per cambiare soltanto la formazione FLE.
+      <ul>
+        <li><b>Leghe Fantacalcio</b>: LEGA + FLE, SOLO FLE e MODIFICA SU FLE richiedono la verifica della squadra FLE riuscita.
+          Senza, la pagina parte in SOLO LEGA.</li>
+        <li><b>Fantaclub</b>: LEGA + FLE controlla la squadra FLE durante il PASSO 2, prima dell'invio; SOLO FLE e MODIFICA SU FLE
+          si usano dopo che questo controllo è riuscito.</li>
+        <li>Leghe fuori dal circuito FLE: solo SOLO LEGA.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>Verifica della squadra FLE</summary>
+    <div class="dc">
+      Con <b>VERIFICA SQUADRA FLE</b> (nella schermata principale, per le leghe di Leghe Fantacalcio) l'app controlla, <b>senza salvare né inviare nulla</b>,
+      che il tuo account gestisca su FLE proprio la squadra della tua lega. Confronta tre dati: la tua squadra nella lega, la squadra FLE prevista
+      per quella squadra e la squadra che il tuo account gestisce su FLE.
+      <ul>
+        <li><b>VERIFICATA</b>: puoi usare LEGA + FLE, SOLO FLE e MODIFICA SU FLE.</li>
+        <li><b>DIVERSA</b>: con questo account su FLE c'è un'altra squadra. Gli invii a FLE restano bloccati: entra con l'account giusto e ripeti.</li>
+        <li><b>INCERTA</b>: un dato non è stato letto (il motivo è indicato). Gli invii a FLE restano bloccati finché la verifica non riesce.
+          Se il motivo è «competizione non ancora nota», apri una volta FAI O MODIFICA LA FORMAZIONE e ripeti.</li>
+      </ul>
+      L'esito resta valido per quella lega e quell'account. Dopo <b>DISCONNETTI</b>, o con un altro account, va ripetuta.
+      SOLO LEGA funziona sempre. Per le leghe Fantaclub non c'è il pulsante: la squadra FLE si controlla nel PASSO 2.
+    </div>
+  </details>
+
+  <details>
+    <summary>Protezioni contro gli invii sbagliati</summary>
+    <div class="dc">
+      <ul>
+        <li>Leghe Fantacalcio: senza verifica riuscita, la pagina della formazione parte in <b>SOLO LEGA</b>: nessun invio a FLE.</li>
+        <li>Prima di ogni invio a FLE l'app controlla di nuovo che la squadra su FLE sia quella giusta: se è diversa, l'invio si blocca.
+          Con SOLO FLE e MODIFICA SU FLE, se su FLE compare una squadra diversa la pagina si chiude senza salvare.</li>
+        <li>Una verifica vale solo per la sua lega e per il tuo account: non passa a un'altra lega né a un altro account.</li>
+        <li>Per le leghe Fantaclub, il controllo della squadra su FLE avviene sempre prima dell'invio.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details>
+    <summary>Più leghe</summary>
+    <div class="dc">
+      Puoi scegliere e cambiare la tua lega dalla schermata principale (<b>CAMBIA LEGA</b>). Se, in SOLO LEGA, passi a un'altra lega del tuo account
+      dal selettore del sito, PASSO 1 e FAI O MODIFICA seguono la lega su cui stai lavorando; scegliendo LEGA + FLE torni alla tua lega FLE.
+      Ogni lega ha la sua verifica: nessuna autorizzazione viene ereditata.
+    </div>
+  </details>
+
+  <details>
+    <summary>Funzioni per gli amministratori</summary>
+    <div class="dc">
+      L'<b>Area Admin</b> è la parte dell'app dedicata agli amministratori. Il codice amministratore serve ad aprirne le funzioni
+      nell'interfaccia dell'app: non è una protezione dei dati sul server. Le funzioni leggono i siti con l'account in uso e non modificano
+      formazioni né dati sulle piattaforme:
+      <ul>
+        <li>controllo generale delle consegne FLE della giornata, con le formazioni consegnate e le squadre iscritte (80/80);</li>
+        <li>consegne FLE per competizione e turno, con gli stati ufficiali e senza false mancate consegne;</li>
+        <li>Ranking di Lega e Ranking per Club indicati come classifiche a punti, senza obbligo di consegna;</li>
+        <li>consegne ufficiali delle leghe di Leghe Fantacalcio e Fantaclub, e riepilogo da condividere su WhatsApp.</li>
+      </ul>
+    </div>
+  </details>
+
+  <details open>
+    <summary>Novità della versione Android 1.3.1</summary>
+    <div class="dc">
+      <ul>
+        <li>Nuovo pulsante <b>VERIFICA SQUADRA FLE</b>: controlla, senza inviare nulla, che il tuo account gestisca su FLE la squadra della tua lega.</li>
+        <li><b>LEGA + FLE</b> si attiva solo dopo la verifica riuscita; senza verifica la formazione si salva in SOLO LEGA, che funziona sempre.</li>
+        <li><b>SOLO FLE</b> si usa subito dopo la verifica riuscita, senza dover prima inviare con LEGA + FLE.</li>
+        <li>Cambio lega con SOLO LEGA: PASSO 1 e FAI O MODIFICA seguono la lega su cui stai lavorando.</li>
+        <li>Area Admin: consegne FLE per competizione e turno, Ranking come classifiche a punti, controllo delle 80 squadre iscritte, schermata che scorre con tutti i pulsanti raggiungibili.</li>
+        <li>Aggiornamenti: dalla prossima versione vedrai numero e novità prima di premere AGGIORNA ORA.</li>
+      </ul>
+    </div>
+  </details>
+
+  <h3 class="sez">DOWNLOAD E GUIDE ANDROID</h3>
+  <section class="card">
+    <a class="btn primary" style="margin-top:0" href="./android/">Pagina Android (download e istruzioni)</a>
+    <a class="btn guide" href="./android/Guida_installazione_Fanta_Vice_Mister_Android.pdf">Guida rapida Android 1.3.1 (PDF)</a>
+    <a class="btn guide" href="./android/Guida_completa_Fanta_Vice_Mister_Android_1.3.1.pdf">Guida completa Android 1.3.1 (PDF)</a>
+  </section>
+
+  <footer>FantaLegaEuropa · Fanta Vice Mister<br>Le funzioni descritte si riferiscono alla versione Android 1.3.1.</footer>
 </main>
 <script>
 // Evidenzia la scheda del dispositivo in uso (solo evidenza: l'utente sceglie sempre).
