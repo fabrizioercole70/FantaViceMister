@@ -1,16 +1,17 @@
 {
-  "versione": "1.3.5",
+  "versione": "1.3.6",
   "novita": [
-    "Account riconosciuto dal sito: verifica della squadra FLE, Area Admin e dati FLE valgono solo per l'account collegato.",
-    "VERIFICA SQUADRA FLE nella Home: LEGA + FLE, SOLO FLE e MODIFICA SU FLE solo con la squadra FLE verificata; SOLO LEGA funziona sempre.",
-    "SWITCH: scegli tu quale usare, verifica dopo il salvataggio, storico per giornata e competizione.",
-    "Confronto con i 25 FLE: moduli ammessi, rosa non conforme bloccata, esclusi dalla panchina con il motivo.",
-    "Fantaclub: competizioni e giornate lette dal sito, regola di mancata consegna, CAMBIA LEGA con accesso diretto alla pagina Consegna.",
-    "Area Admin: consegne FLE per competizione e turno, AGGIORNA TUTTI I TURNI DELLE COMPETIZIONI, consegne ufficiali separate per piattaforma.",
+    "Nuova installazione su iPhone in 3 passi: alla fine, nella Home di FVM, il messaggio COMPLETA L'INSTALLAZIONE guida a mettere l'icona FVM sulla Home.",
+    "Guida agli aggiornamenti separata: si aggiorna lo script, senza reinstallare Userscripts, rifare l'accesso o ricreare l'icona.",
+    "Dalla 1.3.5: account riconosciuto dal sito; VERIFICA SQUADRA FLE nella Home per LEGA + FLE, SOLO FLE e MODIFICA SU FLE; SOLO LEGA funziona sempre.",
+    "Dalla 1.3.5: SWITCH scelto da te e verificato dopo il salvataggio; confronto con i 25 FLE con moduli ammessi ed esclusi dalla panchina con il motivo.",
+    "Dalla 1.3.5: Fantaclub con competizioni e giornate lette dal sito e CAMBIA LEGA con accesso diretto alla pagina Consegna.",
+    "Dalla 1.3.5: Area Admin con consegne FLE per competizione e turno e AGGIORNA TUTTI I TURNI DELLE COMPETIZIONI; consegne ufficiali per piattaforma.",
     "Niente audio delle pagine del sito durante le schermate e le letture di Fanta Vice Mister.",
     "Dopo un aggiornamento compare una volta il riepilogo delle novità."
   ],
   "correzioni": [
+    "Apertura dall'icona: la squadra FLE già verificata compare da sola dopo pochi secondi, senza ricaricare la pagina, e LEGA + FLE torna attiva.",
     "Area Admin: AGGIORNA del controllo generale non si blocca più su «Pagina FLE non letta» (il sito rispondeva senza dati).",
     "Consegne per turno: dopo l'inizio ufficiale della giornata, chi non ha la formazione diventa rosso «Senza formazione · scadenza superata»; prima resta «in attesa».",
     "Le giornate già passate senza formazione restano in rosso anche prima del calcolo ufficiale.",
@@ -18,8 +19,8 @@
     "AGGIORNA TUTTI I TURNI usa la giornata FLE appena letta; le competizioni senza partite in quella giornata risultano «nessun turno»."
   ],
   "limitazioni": [
-    "Dopo l'aggiornamento può essere chiesta di nuovo VERIFICA SQUADRA FLE: ora la verifica vale per l'account collegato.",
-    "Scadenza: Fanta Vice Mister usa l'inizio ufficiale della giornata indicato da FLE. I termini anticipati delle singole leghe non sono ancora gestiti: saranno verificati in seguito.",
+    "Dopo l'aggiornamento può essere chiesta di nuovo VERIFICA SQUADRA FLE: la verifica vale per l'account collegato.",
+    "Scadenza: Fanta Vice Mister usa l'inizio ufficiale della giornata indicato da FLE. I termini anticipati delle singole leghe non sono ancora gestiti.",
     "Leghe Mantra: stati dettagliati delle consegne non ancora disponibili.",
     "L'aggiornamento si installa dal menu dell'estensione Userscripts: Fanta Vice Mister guida i passi ma non può aggiornarsi da solo."
   ]

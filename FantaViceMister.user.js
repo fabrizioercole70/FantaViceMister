@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fanta Vice Mister
 // @description  Fanta Vice Mister per Safari (iPhone e Mac) e browser PC: ordine della panchina, controllo e invio su FLE, area admin.
-// @version      1.3.5
+// @version      1.3.6
 // @updateURL    https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @downloadURL  https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @match        https://leghe.fantacalcio.it/*
@@ -18,13 +18,13 @@
   // 1.0: sulla pagina della guida lo script lascia solo un segnale,
   // cosi la guida capisce da sola che Fanta Vice Mister e installato e attivo.
   if (location.hostname === "fabrizioercole70.github.io") {
-    try { document.documentElement.setAttribute("data-fvm-versione", "1.3.5"); } catch (e) {}
+    try { document.documentElement.setAttribute("data-fvm-versione", "1.3.6"); } catch (e) {}
     return;
   }
   if (window.__FVM_SAFARI__) return;
   window.__FVM_SAFARI__ = true;
 
-  var VERSIONE = "1.3.5";
+  var VERSIONE = "1.3.6";
   var PREFISSO = "fvm_";
 
   // ---------------------------------------------------------------- 1.1.0 Fantaclub · fase 2: passaggio tra domini
@@ -2150,6 +2150,7 @@
       if (ultima && ultima !== imp) nuovaEpocaAccount("identità dell'account cambiata"); // nuovo account: nulla del precedente vale piu
       sScrivi("identita", { imp: imp, epoca: epocaAccount(), at: Date.now() });
       scrivi("identita_ultima", imp);
+      if (prima !== imp) setTimeout(identitaArrivata, 0); // 1.3.6-G2: la Home si aggiorna da sola (apertura dall'icona)
       if (prima !== imp) log("IDENTITA", { esito: ultima && ultima !== imp ? "CAMBIATA (nuovo account)" : ultima ? "confermata" : "letta", impronta: imp.slice(0, 6), fonte: fonte });
       ctl.identitaInCorso = false;
       return imp;
@@ -5130,19 +5131,16 @@
   var AGG_URL = "https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/aggiornamento.json";
   var AGG_SCRIPT_URL = "https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js";
   var AGG_INTERVALLO_MS = 6 * 3600000;
-  // 1.3.5: novita di QUESTA versione, mostrate nel messaggio "aggiornamento completato" (stesse voci di aggiornamento.json)
+  // 1.3.6: novita di QUESTA versione, mostrate nel messaggio "aggiornamento completato" (stesse voci di aggiornamento.json)
   function novitaVersione() {
-    // 1.3.5-RC: novita reali della 1.3.5 (PROVA7-PROVA15 + RC), in breve
-    return ["Account riconosciuto dal sito: verifica della squadra, Area Admin e dati FLE valgono solo per l'account collegato; cambiando account si riverifica (nulla viene cancellato).",
-      "VERIFICA SQUADRA FLE nella Home: LEGA + FLE, SOLO FLE e MODIFICA SU FLE solo con la squadra FLE verificata; SOLO LEGA funziona sempre.",
-      "SWITCH: scelta esplicita, verifica dopo il salvataggio, storico per giornata e competizione.",
-      "Confronto con i 25 FLE: moduli ammessi, rosa non conforme bloccata, esclusi dalla panchina con il motivo, scelte ricordate annullabili.",
-      "Fantaclub: guardia della squadra FLE, competizioni lette dal sito (campionati, punti, coppe), giornate reali, regola di mancata consegna e recupero automatico distinti dalla consegna.",
-      "Area Admin: sblocco valido solo in questa scheda e contesto, nessun controllo FLE automatico, dati FLE solo con il ruolo di amministratore confermato dal sito.",
-      "Consegne ufficiali per piattaforma (Leghe Fantacalcio o Fantaclub); l'altra piattaforma solo in una vista separata.",
-      "CAMBIA LEGA: leghe aperte solo dal tuo account; con Fantaclub, accesso diretto alla pagina Consegna.",
-      "Niente audio delle pagine durante le schermate e le letture di FVM; diagnosi più chiara.",
-      "Dopo un aggiornamento, anche fatto direttamente da Userscripts, compare una volta il riepilogo delle novità."];
+    return ["Nuova installazione su iPhone in 3 passi: alla fine, nella Home di FVM, il messaggio COMPLETA L'INSTALLAZIONE guida a mettere l'icona FVM sulla Home.",
+      "Guida agli aggiornamenti separata: si aggiorna lo script, senza reinstallare Userscripts, rifare l'accesso o ricreare l'icona.",
+      "Dalla 1.3.5: account riconosciuto dal sito; VERIFICA SQUADRA FLE nella Home per LEGA + FLE, SOLO FLE e MODIFICA SU FLE; SOLO LEGA funziona sempre.",
+      "Dalla 1.3.5: SWITCH scelto da te e verificato dopo il salvataggio; confronto con i 25 FLE con moduli ammessi ed esclusi dalla panchina con il motivo.",
+      "Dalla 1.3.5: Fantaclub con competizioni e giornate lette dal sito e CAMBIA LEGA con accesso diretto alla pagina Consegna.",
+      "Dalla 1.3.5: Area Admin con consegne FLE per competizione e turno e AGGIORNA TUTTI I TURNI DELLE COMPETIZIONI; consegne ufficiali per piattaforma.",
+      "Niente audio delle pagine del sito durante le schermate e le letture di Fanta Vice Mister.",
+      "Dopo un aggiornamento compare una volta il riepilogo delle novità."];
   }
   // confronto come Userscripts: componenti numerici separati da punti, mancanti = 0 ("1.3.4-LAN" vale 1.3.4)
   function aggConfronta(a, b) {
@@ -5501,16 +5499,18 @@
     var conn = connesso();
     ultimoConn = conn;
     var modo = leggi("modo", "lega_fle");
+    iconaHomeInizio(); // G1: prima installazione o FVM gia in uso (prima che la Home scriva versione_usata)
+    var msgIcona = iconaHomeMessaggio(piattaformaScelta() === "fantaclub" ? !!leggi("fc_connesso", null) : conn), iconaDaFare = iconaHomeDaCompletare();
     var h = "";
     h += "<div class='hero'><img src='" + LOGO_FVM + "' alt='FVM'><div style='flex:1'><button class='x' data-a='chiudi'>CHIUDI</button><div class='ht'>FANTA VICE<br>MISTER</div><div class='hs'>v" + VERSIONE + " · Stagione 2026/27</div></div></div>";
     h += aggRiquadro(); // 1.3.4: aggiornamento disponibile / completato (solo se esiste davvero)
     // 1.0: riquadro di benvenuto alla prima apertura (sostituisce i passi login della guida)
-    if (!leggi("benvenuto_ok", false)) {
-      h += "<div class='cd' style='border:2px solid #3fae4a'><div class='lb' style='color:#4ade80'>BENVENUTO · INSTALLAZIONE COMPLETATA ✓</div>" +
+    if (!leggi("benvenuto_ok", false) && !msgIcona) {
+      h += "<div class='cd' style='border:2px solid #3fae4a'><div class='lb' style='color:#4ade80'>" + (iconaDaFare ? "BENVENUTO IN FANTA VICE MISTER" : "BENVENUTO · INSTALLAZIONE COMPLETATA ✓") + "</div>" +
         "<div class='t2'>Fanta Vice Mister è attivo su questo iPhone</div>" +
         (conn
           ? "<div class='mu'>• Sei connesso ✓</div><div class='mu'>• " + (slug ? "Lega riconosciuta: " + esc(nomeLega(slug)) : "Entra una volta nella tua lega con <b>CAMBIA LEGA</b>: poi la ricordo da solo.") + "</div>"
-          : "<div class='mu'>• Ultimo passo: tocca <b>ACCEDI</b> qui sotto ed entra con username e password di Fantacalcio. Dopo il login torni qui da solo.</div>") +
+          : "<div class='mu'>• " + (iconaDaFare ? "Tocca" : "Ultimo passo: tocca") + " <b>ACCEDI</b> qui sotto ed entra con username e password di Fantacalcio. Dopo il login torni qui da solo.</div>") +
         "<div class='mu'>• Da ora apri Fanta Vice Mister dall'icona <b>FVM</b> sulla Home.</div>" +
         "<div class='mu'>• Dalle pagine di Fantacalcio, il bottone tondo <b>FVM</b> sul bordo destro ti riporta sempre qui.</div>" +
         "<button class='bt oro' data-a='benvenuto'>HO CAPITO</button></div>";
@@ -5534,6 +5534,7 @@
         "<div class='mu'>Username e password vengono inseriti esclusivamente nella pagina ufficiale della piattaforma.</div>" +
         (conn ? "<button class='bt' data-a='cambia'>CAMBIA</button><button class='bt rosso' data-a='disconnetti'>DISCONNETTI</button>" : "<button class='bt oro' data-a='accedi'>ACCEDI</button><button class='bt' data-a='cambia'>CAMBIA</button>") + "</div>";
     }
+    h += msgIcona; // G1: COMPLETA L'INSTALLAZIONE (solo prima configurazione, con l'accesso attivo)
     // 1.1.0 Fantaclub fasi 5-10: con Fantaclub scelto, carte Fantaclub (il ramo Leghe qui sotto resta invariato)
     if (piattaformaScelta() === "fantaclub") h += carteFantaclub();
     else {
@@ -5548,7 +5549,7 @@
     h += "<div class='cd'><div class='lb'>LA MIA SQUADRA</div><div class='t1' style='margin-top:6px'>" + esc(squadra) + "</div>" +
       "<div class='mu' style='font-weight:800;margin-top:4px'>" + esc(slugP1 ? nomeLega(slugP1) : "") + "</div>" +
       "<button class='bt' data-a='leghe'>CAMBIA LEGA</button>" +
-      (lav ? "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>SOLO LEGA: nessuna squadra FLE per questa lega</div>" : u && u.fleTid ? (fleAutorizzatoLeghe(true).ok ? "<div style='color:#4ade80;font-weight:800;margin-top:10px'>✓ Squadra FLE verificata per questo account</div>" : "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>Squadra FLE prevista dalla tabella: da verificare con VERIFICA SQUADRA FLE</div>") : "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>La squadra verrà riconosciuta dopo il salvataggio della formazione</div>") + "</div>";
+      (lav ? "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>SOLO LEGA: nessuna squadra FLE per questa lega</div>" : u && u.fleTid ? (fleAutorizzatoLeghe(true).ok ? "<div style='color:#4ade80;font-weight:800;margin-top:10px'>✓ Squadra FLE verificata per questo account</div>" : identitaInArrivo() ? "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>Riconoscimento dell'account in corso…</div>" : "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>Squadra FLE prevista dalla tabella: da verificare con VERIFICA SQUADRA FLE</div>") : "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>La squadra verrà riconosciuta dopo il salvataggio della formazione</div>") + "</div>";
     var sl = leggi("solo_lega_salvata", null);
     if (sl) {
       h += "<div class='cd' style='border-left:4px solid #e2b33c'><div class='lb'>SOLO LEGA</div>" +
@@ -5577,11 +5578,12 @@
     // Leghe Fantacalcio: invariato.
     if ((piattaformaScelta() !== "fantaclub" && !legaLavoro()) || (piattaformaScelta() === "fantaclub" && ricontrollaFcAmmesso())) h += "<button class='bt' data-a='ricontrolla'>RIPETI CONTROLLO FLE</button>";
     h += "<button class='bt' data-a='diagnosi'>CONDIVIDI DIAGNOSI</button>";
-    h += "<button class='bt' data-a='icona'>METTI FVM SULLA HOME</button>"; // 1.3.3: icona FVM con la lega in uso
+    h += "<button class='bt' data-a='icona'" + (msgIcona ? " style='border:2px solid #e2b33c'" : "") + ">METTI FVM SULLA HOME</button>"; // 1.3.3: icona FVM con la lega in uso (G1: bordo dorato durante la prima configurazione)
     h += "<div class='cd' style='margin-top:10px'><div class='lb'>STORICO INVII</div>";
     // storico unificato: ultima operazione (lega in uso, se presente) su una riga + esiti LEGA / FLE; elenco a parte
     try { h += cartaStorico(); } catch (e) { h += "<div class='mu' style='margin-top:6px'>Storico non disponibile.</div>"; }
     h += "<button class='bt' style='color:#aab3c2' data-a='admin'>AREA ADMIN</button></div>";
+    if (ICONA_PROVA) h += "<button class='bt' style='color:#aab3c2;font-size:12px' data-a='icona_prova'>PROVA PRIVATA · MOSTRA DI NUOVO «COMPLETA L'INSTALLAZIONE»</button>";
     // 1.1.0: piede come l'app Android: logo FantaLegaEuropa centrato + dicitura
     h += "<div style='display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:14px'>" +
       "<img src='" + LOGO_FLE + "' alt='FantaLegaEuropa' style='width:86px;height:86px;object-fit:contain;display:block'>" +
@@ -5611,7 +5613,9 @@
         if (a === "storico") apriStorico();
         if (a === "ufficiale") apriUfficiale();
         if (a === "formazione") vaiAllaFormazione();
-        if (a === "icona") meIconaHome();
+        if (a === "icona") { if (iconaHomeStato() === "da_fare") iconaHomeSegna("aperta", "METTI FVM SULLA HOME"); meIconaHome(); } // G1: azione del pulsante invariata
+        if (a === "icona_gia") { iconaHomeSegna("fatta", "conferma: ho gia l'icona"); aggiornaPannello(); return; }
+        if (a === "icona_prova" && ICONA_PROVA) { scrivi("icona_home", { stato: "da_fare", at: Date.now(), come: "prova privata" }); log("ICONA HOME", { stato: "da_fare", come: "prova privata" }); aggiornaPannello(); return; }
         // 1.1.0: RIPETI CONTROLLO e INVIA lavorano sulla formazione LEGA + FLE: da SOLO LEGA si torna a LEGA + FLE.
         if ((a === "ricontrolla" || a === "invia") && leggi("modo", "lega_fle") === "solo_lega") { scrivi("modo", "lega_fle"); log("MODO", { a: "lega_fle", perche: a }); }
         if (a === "leghe") cambiaLegaHome();
@@ -6706,10 +6710,42 @@
     return true;
   }
   // 1.3.5: riquadro SQUADRA FLE nella Home (Leghe Fantacalcio): stato della verifica e pulsante VERIFICA SQUADRA FLE
+  // 1.3.6-G2 · APERTURA DALL'ICONA. L'identita dell'account vale solo per la scheda di Safari (scheda nuova = da rileggere) e arriva dal
+  // sito qualche secondo DOPO la Home. Quando arriva: Home ridisegnata e, se la sessione era partita in SOLO LEGA soltanto perche mancava
+  // l'identita, ritorno a LEGA + FLE. Nel frattempo (al massimo 20 s dall'apertura della pagina, e solo se per questo account e questa epoca
+  // c'e gia una verifica riuscita salvata) la Home dice «riconoscimento in corso» invece di «da verificare».
+  // Sicurezza invariata: fleAutorizzatoLeghe non cambia, nessuna funzione FLE prima che l'identita sia riconosciuta.
+  var AVVIO_PAGINA = Date.now(), IDENTITA_ATTESA_MS = 20000;
+  function identitaInArrivo() {
+    if (identitaAttuale() || Date.now() - AVVIO_PAGINA > IDENTITA_ATTESA_MS) return false;
+    var a = leggi("fle_associazione", null);
+    return !!(a && a.esito === "verificata" && a.lega && a.lega === leggi("lega_sorgente", "") && (Number(a.epoca) || 0) === epocaAccount() && /^[0-9a-f]{32}$/.test(String(a.imp || "")));
+  }
+  // allo scadere dell'attesa la Home torna a dire «da verificare» se l'identita non e arrivata
+  function programmaRidisegnoIdentita() {
+    if (ctl.identitaRidisegno) return;
+    ctl.identitaRidisegno = true;
+    setTimeout(function () { ctl.identitaRidisegno = false; if (!identitaAttuale() && pannello && pannelloPrincipale) aggiornaPannello(); }, Math.max(0, IDENTITA_ATTESA_MS - (Date.now() - AVVIO_PAGINA)) + 300);
+  }
+  function identitaArrivata() {
+    try {
+      var att = sLeggi("modo_attesa_identita");
+      if (att) {
+        sScrivi("modo_attesa_identita", null);
+        if (Date.now() - Number(att.at || 0) <= IDENTITA_ATTESA_MS && piattaformaScelta() === "fantacalcio" && !sLeggi("task") && !legaLavoro() && !suFormazione() &&
+            leggi("modo", "lega_fle") === "solo_lega" && fleAutorizzatoLeghe().ok) {
+          scrivi("modo", "lega_fle"); log("MODO", { a: "lega_fle", perche: "account riconosciuto dopo l'apertura (squadra FLE verificata)" });
+        }
+      }
+      if (pannello && pannelloPrincipale) aggiornaPannello();
+    } catch (e) {}
+  }
   function cartaSquadraFle() {
     var src = leggi("lega_sorgente", ""), a = associazioneLeghe(), nome = src ? nomeLega(src) : "la tua lega";
     var quando = a && a.at ? " · " + new Date(a.at).toLocaleString("it-IT") : "";
     var h = "<div class='cd' style='border-left:4px solid " + (a && a.esito === "verificata" ? "#3fae4a" : a && a.esito === "diversa" ? "#e2333b" : "#e2b33c") + "'><div class='lb'>SQUADRA FLE</div>";
+    if (!a && identitaInArrivo()) { programmaRidisegnoIdentita(); return h + "<div style='color:#fbbf24;font-weight:900;margin-top:6px'>RICONOSCIMENTO DELL'ACCOUNT IN CORSO…</div>" +
+      "<div class='mu'>FVM sta leggendo dal sito l'account collegato (sola lettura). Tra pochi secondi la verifica di " + esc(nome) + " compare qui da sola.</div></div>"; } // 1.3.6-G2
     if (a && a.esito === "verificata") h += "<div style='color:#4ade80;font-weight:900;margin-top:6px'>✓ VERIFICATA" + (a.squadra ? " · " + esc(a.squadra) : "") + "</div><div class='mu'>Questo account gestisce su FLE la squadra di " + esc(nome) + esc(quando) + ". LEGA + FLE disponibile.</div>";
     else if (a && a.esito === "diversa") h += "<div style='color:#f87171;font-weight:900;margin-top:6px'>SQUADRA DIVERSA · NESSUN INVIO A FLE</div><div class='mu'>Con questo account su FLE c'è una squadra FLE diversa da quella di " + esc(nome) + (a.motivo ? ": " + esc(a.motivo) : "") + esc(quando) + ". FAI O MODIFICA parte in SOLO LEGA.</div>";
     else if (a && a.esito === "incerta") h += "<div style='color:#fbbf24;font-weight:900;margin-top:6px'>NON VERIFICATA</div><div class='mu'>Esito incerto" + (a.motivo ? ": " + esc(a.motivo) : "") + esc(quando) + ". Finché la verifica non riesce si usa SOLO LEGA.</div>";
@@ -9388,6 +9424,7 @@
   }
   function meAvvioIcona(primaPagina) {
     try {
+      if (primaPagina) iconaHomeDaIcona(document.referrer); // G1
       if (primaPagina && (!document.referrer || meDaPagineFvm(document.referrer))) { sScrivi("apertura_icona", { at: Date.now(), n: 0 }); log("APERTURA", { pagina: location.pathname, da: document.referrer ? "icona FVM (pagina dell'icona)" : "icona o scheda nuova" }); }
       var a = sLeggi("apertura_icona");
       if (!a) return false;
@@ -9420,6 +9457,54 @@
     log("ICONA HOME", { lega: lega || "nessuna (apre leghe.fantacalcio.it)", pagina: url });
     chiudiPannello();
     location.assign(url + "#prepara");
+  }
+  // ---------------------------------------------------------------- G1 COMPLETA L'INSTALLAZIONE (icona sulla Home)
+  // iOS non fa sapere a una pagina se la sua icona e sulla Home: FVM decide SOLO da fatti certi, memorizzati su questo
+  // iPhone (memoria di leghe.fantacalcio.it, dove l'icona riporta sempre). Stato "icona_home":
+  //  - da_fare: prima installazione (nessun dato FVM precedente) -> messaggio sotto CONNESSO;
+  //  - aperta: premuto METTI FVM SULLA HOME (pagina dell'icona aperta) -> messaggio ridotto, finche non arriva la prova;
+  //  - fatta: FVM aperto dall'icona (pagina dell'icona app.html -> Leghe, prima pagina della scheda) oppure conferma
+  //    esplicita HO GIA L'ICONA FVM SULLA HOME;
+  //  - gia_presente: FVM era gia in uso su questo iPhone prima di questa versione -> nessun messaggio.
+  // Nessun dato personale, nessuna lettura di cookie; il pulsante METTI FVM SULLA HOME fa esattamente quello di prima.
+  var ICONA_PROVA = /-G\d/.test(VERSIONE); // solo copie private di collaudo: pulsante per rivedere il messaggio
+  var ICONA_DATI_PRIMA = ["versione_usata", "benvenuto_ok", "lega_sorgente", "ultima", "fc_lega", "agg_info", "invii"];
+  function iconaHomeInizio() {
+    if (location.hostname !== DOMINI_FVM.leghe || leggi("icona_home", null)) return;
+    var prima = ICONA_DATI_PRIMA.filter(function (k) { return leggi(k, null) != null; });
+    scrivi("icona_home", { stato: prima.length ? "gia_presente" : "da_fare", at: Date.now() });
+    log("ICONA HOME", { stato: prima.length ? "gia_presente" : "da_fare", motivo: prima.length ? "FVM gia usato su questo iPhone (" + prima.slice(0, 3).join(", ") + "): nessun messaggio" : "prima installazione: messaggio COMPLETA L'INSTALLAZIONE" });
+  }
+  function iconaHomeStato() { var s = leggi("icona_home", null); return s && s.stato || ""; }
+  function iconaHomeDaCompletare() { var st = iconaHomeStato(); return location.hostname === DOMINI_FVM.leghe && (st === "da_fare" || st === "aperta"); }
+  function iconaHomeSegna(stato, come) {
+    var s = leggi("icona_home", null) || {};
+    if (s.stato === stato) return;
+    scrivi("icona_home", { stato: stato, at: Date.now(), come: String(come || "").slice(0, 60), prima: s.stato || "" });
+    log("ICONA HOME", { stato: stato, da: s.stato || "nessuno", come: come || "" });
+  }
+  // prima pagina della scheda arrivata dalla pagina dell'icona: app.html (indirizzo completo) in ogni caso; dalle pagine FVM
+  // in genere (solo l'origine) soltanto dopo METTI FVM SULLA HOME. Un indirizzo digitato (nessuna provenienza) non basta.
+  function iconaHomeDaIcona(rif) {
+    try {
+      var st = iconaHomeStato();
+      if (location.hostname !== DOMINI_FVM.leghe || (st !== "da_fare" && st !== "aperta") || !rif || !meDaPagineFvm(rif)) return;
+      var daApp = /\/app\.html(\?|#|$)/.test(new URL(rif).pathname + "");
+      if (daApp || st === "aperta") iconaHomeSegna("fatta", daApp ? "aperto dall'icona (app.html)" : "aperto dalle pagine FVM dopo METTI FVM SULLA HOME");
+    } catch (e) {}
+  }
+  // messaggio sotto CONNESSO: solo prima configurazione, solo con l'accesso attivo, solo su Leghe Fantacalcio
+  function iconaHomeMessaggio(connessoOra) {
+    if (!connessoOra || !iconaHomeDaCompletare()) return "";
+    var aperta = iconaHomeStato() === "aperta";
+    var lega = piattaformaScelta() === "fantacalcio" ? String(legaCorrente() || "").toLowerCase() : "x";
+    return "<div class='cd' style='border:2px solid #e2b33c'><div class='lb' style='color:#e2b33c'>COMPLETA L'INSTALLAZIONE</div>" +
+      (aperta
+        ? "<div class='mu' style='margin-top:6px'>Hai già aggiunto l'icona? Apri Fanta Vice Mister toccando l'icona <b>FVM</b> sulla Home del tuo iPhone: questo messaggio sparisce da solo.</div>" +
+          "<div class='mu' style='margin-top:6px'>Non l'hai ancora aggiunta? Scorri verso il basso e premi <b>METTI FVM SULLA HOME</b>, sotto <b>CONDIVIDI DIAGNOSI</b>.</div>"
+        : "<div class='mu' style='margin-top:6px;font-size:15px;color:#fff'>Completa l'installazione sul tuo iPhone. Scorri verso il basso e premi <b>METTI FVM SULLA HOME</b>, sotto <b>CONDIVIDI DIAGNOSI</b>.</div>") +
+      (!lega || lega === FLE_SLUG ? "<div class='mu' style='margin-top:6px'>Consiglio: prima entra nella tua lega con <b>CAMBIA LEGA</b>, così l'icona aprirà direttamente la tua lega.</div>" : "") +
+      "<button class='bt' style='font-size:13px;color:#aab3c2' data-a='icona_gia'>HO GIÀ L'ICONA FVM SULLA HOME</button></div>";
   }
   // Stato dell'accesso a Leghe, ricavato SOLO da risposte reali del sito (mai cookie o token):
   // - accesso verificato: una lettura della formazione con risposta 2xx;
@@ -9513,6 +9598,7 @@
   // ---------------------------------------------------------------- avvio
   var avviato = false;
   function avvia() {
+    iconaHomeInizio(); // G1: prima di qualsiasi scrittura dell'avvio
     monta();
     // 1.1.0: a ogni nuova sessione di Safari si riparte da LEGA + FLE (come l'app),
     // salvo un'attivita FLE gia in corso in questa scheda.
@@ -9524,6 +9610,7 @@
         // 1.3.5 (Leghe Fantacalcio): LEGA + FLE solo con la squadra FLE verificata, altrimenti SOLO LEGA
         var mI = modoInizialeLeghe();
         if (leggi("modo", "lega_fle") !== mI) { scrivi("modo", mI); log("MODO", { a: mI, perche: "nuova sessione" + (mI === "solo_lega" ? " (squadra FLE non verificata)" : "") }); }
+        if (mI === "solo_lega" && fleAutorizzatoLeghe().motivo === "identita") sScrivi("modo_attesa_identita", { at: Date.now() }); // 1.3.6-G2
       }
     }
     controllaPagina();

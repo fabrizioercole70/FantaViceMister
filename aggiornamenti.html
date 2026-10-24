@@ -1,63 +1,108 @@
 <!doctype html>
-<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Aggiornamenti di Fanta Vice Mister</title>
+<html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#102d59">
+<title>Aggiorna Fanta Vice Mister su iPhone</title>
 <style>
-body{margin:0;background:linear-gradient(180deg,#0a1e3d,#07162c);color:#f8f6ef;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.45}
-main{max-width:560px;margin:0 auto;padding:20px 16px 40px}
-h1{color:#f3d16c;font-size:24px;margin:6px 0 4px}h2{color:#e8bd52;font-size:17px;margin:22px 0 8px}
-.note{border:1px solid #31517b;border-radius:12px;padding:12px;margin:12px 0;color:#c9d2df}
-.warn{border-color:#e8bd52;color:#f8f6ef}
-ol{padding-left:22px}li{margin:8px 0}b{color:#fff}
+:root{--navy:#102d59;--gold:#e8bd52;--gold2:#f3d16c;--muted:#c9d2df;--line:#31517b}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:linear-gradient(180deg,#0a1e3d,#07162c);color:#f8f6ef;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;line-height:1.45;font-size:16px}
+main{max-width:560px;margin:0 auto;padding:calc(14px + env(safe-area-inset-top)) 16px calc(28px + env(safe-area-inset-bottom))}
+h1{color:var(--gold2);font-size:22px;margin:4px 0 4px}
+.sub{margin:0 0 12px;color:var(--muted);font-size:14px;font-weight:600}
+.note{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:10px 0;color:#e8edf5;background:#0b2346;font-size:15px}
+.warn{border:2px solid var(--gold)}.ok{border:2px solid #3fae4a}
+.card{background:rgba(16,45,89,.96);border:2px solid var(--gold);border-radius:20px;padding:16px;margin:0 0 14px}
+.card h2{font-size:19px;margin:0 0 4px;color:#fff}
+.tag{display:inline-block;background:var(--gold);color:var(--navy);font-weight:900;font-size:12px;border-radius:8px;padding:3px 8px;margin-bottom:6px}
+.card.vecchie{border-color:#3f68a0}.card.vecchie .tag{background:#3f68a0;color:#fff}
+ol{padding-left:22px;margin:8px 0}li{margin:7px 0}b{color:#fff}
+a{color:var(--gold2)}
+a.btn{display:block;text-align:center;text-decoration:none;font-weight:900;font-size:16px;border-radius:14px;padding:14px;margin:12px 0 4px;min-height:50px;background:linear-gradient(180deg,var(--gold2),var(--gold));color:var(--navy)}
+a.btn.sec{background:#173f74;color:#fff;border:1px solid #3f68a0}
+figure{margin:8px 0 2px;text-align:center}
+figure img{display:block;width:100%;max-width:300px;margin:auto;border-radius:12px;border:1px solid var(--line)}
+figure svg{width:100%;max-width:300px;display:block;margin:auto;border-radius:12px}
+figcaption{font-size:13px;color:var(--muted);margin-top:4px}
+details{background:#0b2346;border:1px solid var(--line);border-radius:12px;margin:10px 0}
+details>summary{cursor:pointer;list-style:none;padding:13px 40px 13px 12px;font-weight:800;font-size:14px;letter-spacing:.04em;color:var(--gold2);position:relative;min-height:46px}
+details>summary::-webkit-details-marker{display:none}
+details>summary::after{content:'▾';position:absolute;right:14px;top:12px;font-size:16px}
+details[open]>summary::after{content:'▴'}
+details>.dentro{padding:0 12px 12px;font-size:15px;color:#e8edf5}
 </style></head><body><main>
-<h1>Aggiornamenti di Fanta Vice Mister (dalla 1.3.4 in poi)</h1>
-<p>Esempio: dalla <b>1.3.4</b> alla <b>1.3.5</b>. La procedura è identica per la 1.3.5 → 1.3.6, la 1.3.6 → 1.3.7
-e per <b>tutte le versioni future</b>.</p>
+<h1>Aggiorna Fanta Vice Mister</h1>
+<p class="sub">Per chi ha già FVM sull'iPhone · vale per ogni nuova versione</p>
 
-<div class="note warn"><b>Usa Safari.</b> Fanta Vice Mister funziona solo in Safari, tramite l'estensione Userscripts.
-Non usare Chrome né l'app Google. Su tutti i modelli di iPhone i passi sono gli stessi.</div>
+<div class="note ok"><b>Non devi ricominciare da zero.</b> Non serve reinstallare l'app Userscripts, rifare l'accesso a Fantacalcio o ricreare l'icona
+sulla Home: basta aggiornare lo script di Fanta Vice Mister. Con un normale aggiornamento lega, impostazioni e storico restano su questo iPhone;
+si perdono solo se cancelli i dati dei siti web di Safari.</div>
+<div class="note warn"><b>L'ultima conferma tocca a te:</b> Fanta Vice Mister non si aggiorna da solo. La nuova versione la installa
+Userscripts quando tocchi <b>Install</b> (o <b>Update</b>).</div>
+<p style="font-size:15px;margin:10px 2px">Quale versione hai? È scritta sotto il titolo di Fanta Vice Mister, per esempio <b>v1.3.6</b>.</p>
 
-<h2>Quando c'è una nuova versione</h2>
-<p>Aprendo Fanta Vice Mister compare il riquadro <b>AGGIORNAMENTO DISPONIBILE</b> con:</p>
-<ul><li>la versione installata (es. 1.3.4) e quella nuova (es. 1.3.5);</li><li><b>Cosa cambia</b>, le correzioni e le eventuali limitazioni;</li>
-<li>i pulsanti <b>AGGIORNA ORA</b> e <b>NON ORA</b>.</li></ul>
-<p>Con <b>NON ORA</b> il riquadro sparisce per quella versione; puoi aggiornare quando vuoi seguendo i passi qui sotto.</p>
-
-<h2>Passi</h2>
+<!-- ============================== 1.3.4 E SUCCESSIVE -->
+<section class="card">
+<span class="tag">FVM 1.3.4 E SUCCESSIVE</span>
+<h2>Con il pulsante AGGIORNA ORA</h2>
 <ol>
-<li>Tocca <b>AGGIORNA ORA</b>: Fanta Vice Mister apre le istruzioni (non installa ancora nulla: la conferma la dai in Userscripts).</li>
-<li>Nella barra dell'indirizzo di Safari tocca l'icona delle estensioni (<b>pezzo di puzzle</b>, oppure <b>AA</b> → <b>Estensioni</b>).</li>
-<li>Tocca <b>Userscripts</b>, poi l'icona degli aggiornamenti (<b>Show updates</b>). Se l'elenco è vuoto, tocca il controllo
-degli aggiornamenti e aspetta qualche secondo.</li>
-<li>Accanto a <b>Fanta Vice Mister</b> tocca <b>Update</b>.</li>
-<li>Torna su Fanta Vice Mister e tocca <b>HO AGGIORNATO · RICARICA</b>.</li>
-<li>Se la nuova versione è attiva compare <b>AGGIORNAMENTO COMPLETATO ✓</b>. Se invece il riquadro dice che la versione
-«non è ancora attiva», l'aggiornamento non è stato installato: ripeti dal passo 2.</li>
+<li>Quando esce una nuova versione, nella Home di FVM compare <b>AGGIORNAMENTO DISPONIBILE</b>, con la versione installata, quella nuova,
+<b>Cosa cambia</b>, <b>Correzioni</b> e <b>Limitazioni note</b>.</li>
+<li>Tocca <b>AGGIORNA ORA</b>: FVM apre le istruzioni (non installa ancora nulla).</li>
+<li>In fondo alle istruzioni tocca <b>APRI IL FILE DELLO SCRIPT</b>. Si apre una pagina piena di codice: è normale.</li>
+<li>Tocca l'<b>icona delle estensioni</b> nella barra di Safari (un piccolo puzzle oppure il simbolo con le lineette, accanto
+all'indirizzo) → <b>Userscripts</b>.</li>
+<li>Tocca la barra <b>verde</b> «Userscript Installed: Tap to re-install», poi il pulsante azzurro <b>Install</b>, poi <b>Fine</b>.</li>
+<li>Apri FVM dall'<b>icona sulla Home</b> (o entra nella tua lega): compare una volta <b>AGGIORNAMENTO COMPLETATO ✓</b> con le novità, e sotto il titolo c'è il nuovo numero.</li>
 </ol>
+<details><summary>MOSTRA ISTRUZIONI DETTAGLIATE</summary><div class="dentro">
+<span data-fig="riquadroAgg" data-cap="Il riquadro nella Home di FVM (esempio)"></span>
+<ul>
+<li><b>Quando compare</b>: FVM controlla le novità al massimo <b>ogni 6 ore</b> (dopo un errore di rete, di nuovo dopo 30 minuti). Il riquadro può
+quindi comparire qualche ora dopo l'uscita della versione. Puoi aggiornare subito anche senza riquadro: vedi la sezione per le versioni 1.3.1 e 1.3.3,
+i passi sono gli stessi.</li>
+<li><b>NON ORA</b>: nasconde l'avviso di quella versione, che non ricompare più (tornerà solo quando uscirà una versione ancora più nuova).
+L'aggiornamento manuale resta sempre possibile: tocca <b>APRI IL FILE DELLO SCRIPT</b> qui sotto e segui i punti 4, 5 e 6.</li>
+<li><b>Altro modo</b> indicato nelle istruzioni di FVM: in Userscripts tocca l'icona degli aggiornamenti (<b>Show updates</b>), poi <b>Update</b> accanto
+a Fanta Vice Mister, poi <b>HO AGGIORNATO · RICARICA</b> in FVM. Se l'aggiornamento non compare, usa la barra verde come sopra.</li>
+<li><b>Ancora il numero vecchio</b>, o il riquadro dice che la versione «non è ancora attiva»? L'installazione in Userscripts non è avvenuta:
+ripeti dal punto 3.</li>
+<li><b>AGGIORNAMENTO COMPLETATO ✓</b> compare soltanto quando la nuova versione è davvero attiva, una volta sola: resta finché tocchi <b>OK</b>
+o fino alla riapertura successiva di FVM.</li>
+</ul>
+<span data-fig="verde" data-cap="La barra verde: FVM c'è già, stai solo aggiornando"></span>
+<span data-fig="installa" data-cap="Il pulsante azzurro Install, poi Fine"></span>
+</div></details>
+</section>
 
-<div class="note">Fanta Vice Mister non può aggiornarsi da solo: l'aggiornamento lo installa Userscripts quando tocchi
-<b>Update</b>. Per questo il «completato» compare solo quando la nuova versione è davvero attiva.
-Le impostazioni restano e l'icona FVM sulla Home non va rimessa.</div>
-
-<h2>Se l'aggiornamento non compare in Userscripts</h2>
-<p>Nella schermata di AGGIORNA ORA tocca <b>APRI IL FILE DELLO SCRIPT</b>, poi icona delle estensioni → <b>Userscripts</b>
-e conferma l'installazione. Torna su Leghe Fantacalcio e apri Fanta Vice Mister. I passi completi sono qui sotto.</p>
-
-<h2>Installare o reinstallare dal file dello script (percorso provato su iPhone)</h2>
-<p>Vale per la <b>prima installazione</b> e per l'<b>aggiornamento</b>: cambia solo il colore della barra che compare in Userscripts.</p>
+<!-- ============================== 1.3.1 E 1.3.3 -->
+<section class="card vecchie">
+<span class="tag">FVM 1.3.1 E 1.3.3</span>
+<h2>Senza il pulsante AGGIORNA ORA</h2>
+<p style="margin:4px 0 0">Queste versioni non hanno il riquadro degli aggiornamenti: si aggiornano direttamente con Userscripts.</p>
 <ol>
-<li>In <b>Safari</b> apri il <a href="https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js">file dello script Fanta Vice Mister</a>
-(oppure tocca <b>APRI IL FILE DELLO SCRIPT</b> nella schermata di AGGIORNA ORA).</li>
-<li>Safari mostra una pagina piena di codice: è normale.</li>
-<li>Nella barra di Safari tocca l'icona delle estensioni (<b>pezzo di puzzle</b>, oppure <b>AA</b> → <b>Estensioni</b>) e scegli <b>Userscripts</b>.</li>
-<li>In Userscripts compare una barra:
-<ul><li><b>gialla</b> «Userscript Detected: Tap to install» = <b>prima installazione</b>;</li>
-<li><b>verde</b> «Userscript Installed: Tap to re-install» = Fanta Vice Mister è già installato: è l'<b>aggiornamento</b>.</li></ul>
-Tocca la barra.</li>
-<li>Scorri leggermente verso il basso e tocca il pulsante <b>blu Install</b>.</li>
-<li>Tocca <b>Fine</b> in alto a destra. Safari torna alla pagina del codice: è normale.</li>
-<li>Nella barra degli indirizzi scrivi <b>https://leghe.fantacalcio.it</b>, accedi se serve ed <b>entra nella tua lega</b>:
-Fanta Vice Mister si apre entrando nella lega. Se non compare, aggiorna la pagina di Safari.</li>
+<li>Tocca il pulsante qui sotto: si apre una pagina piena di codice, è normale.</li>
+<li>Icona delle estensioni → <b>Userscripts</b> → tocca la barra <b>verde</b> → premi tu il pulsante azzurro <b>Install</b> → <b>Fine</b>.
+Userscripts non aggiorna da solo: finché non premi <b>Install</b> non cambia nulla.</li>
+<li>Apri FVM dall'icona sulla Home (o entra nella tua lega) e controlla che sotto il titolo ci sia il <b>nuovo numero di versione</b> (es. <b>v1.3.6</b>).</li>
 </ol>
-<div class="note">Reinstallando, le impostazioni restano e l'icona FVM sulla Home non va rimessa.
-Dopo il passaggio alla <b>1.3.5</b> può esserti chiesta di nuovo <b>VERIFICA SQUADRA FLE</b>: ora la verifica vale per l'account collegato.</div>
+<details><summary>MOSTRA ISTRUZIONI DETTAGLIATE</summary><div class="dentro">
+<ul>
+<li>Vedi la barra <b>gialla</b> «Tap to install» invece della verde? FVM non risulta installato su questo iPhone: segui la
+<a href="./iphone.html">prima installazione</a>.</li>
+<li>Puoi anche usare l'aggiornamento di Userscripts: icona delle estensioni → <b>Userscripts</b> → <b>Show updates</b> → premi tu <b>Update</b>, poi ricarica la pagina.</li>
+<li>Dopo il passaggio alla <b>1.3.5</b> o successive può esserti chiesta di nuovo <b>VERIFICA SQUADRA FLE</b>: ora la verifica vale per l'account collegato.</li>
+</ul>
+</div></details>
+</section>
+
+<a class="btn" href="https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js">APRI IL FILE DELLO SCRIPT</a>
+<p style="text-align:center;font-size:13px;color:var(--muted);margin:2px 0 14px">Va bene per tutte le versioni: è lo stesso pulsante che c'è dentro AGGIORNA ORA.</p>
+
+<div class="note"><b>Non confondere:</b> <b>AGGIORNA ORA</b> nel riquadro AGGIORNAMENTO DISPONIBILE aggiorna l'<b>app</b>. I pulsanti
+<b>AGGIORNA</b>, <b>AGGIORNA QUESTO TURNO</b> e <b>AGGIORNA TUTTI I TURNI DELLE COMPETIZIONI</b> dell'<b>Area Admin</b> rileggono soltanto
+i dati di FLE e delle leghe: non cambiano la versione di FVM.</div>
+
+<a class="btn sec" href="./iphone.html">Non hai ancora FVM? Prima installazione</a>
+<script src="./guida-disegni.js"></script>
 </main></body></html>

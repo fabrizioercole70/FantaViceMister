@@ -3,6 +3,24 @@
 Per ogni versione: numero, data, novità, correzioni, limitazioni note.
 iPhone (Safari): il riepilogo breve della versione più recente è anche in `aggiornamento.json` (riquadro AGGIORNA ORA).
 
+## iPhone (Safari) 1.3.6 — ottobre 2026
+**Novità**
+- Prima installazione su iPhone in 3 passi (Userscripts, installazione di FVM, icona sulla Home). L'ultimo passo si completa nella Home di FVM:
+  con l'accesso attivo, sotto «Connesso ✓», il messaggio COMPLETA L'INSTALLAZIONE indica METTI FVM SULLA HOME (pulsante invariato).
+  Il messaggio compare solo durante la prima configurazione, sparisce aprendo FVM dalla nuova icona oppure con HO GIÀ L'ICONA FVM SULLA HOME;
+  chi usava già FVM non lo vede mai.
+- Guida agli aggiornamenti separata (1.3.4 e successive con AGGIORNA ORA; 1.3.1 e 1.3.3 con Userscripts): si aggiorna lo script,
+  senza reinstallare Userscripts, rifare l'accesso o ricreare l'icona.
+- Comprende tutte le novità e correzioni della 1.3.5 (qui sotto).
+
+**Correzioni**
+- Apertura dall'icona sulla Home: l'account veniva riconosciuto qualche secondo dopo la Home, che restava su «SQUADRA FLE · DA VERIFICARE» finché
+  non si ricaricava la pagina. Ora la Home si aggiorna da sola (nel frattempo «RICONOSCIMENTO DELL'ACCOUNT IN CORSO…», al massimo 20 secondi)
+  e, se la sessione era partita in SOLO LEGA solo per questo, torna LEGA + FLE. Nessuna funzione FLE prima del riconoscimento dell'account.
+
+**Limitazioni note**
+- Come la 1.3.5.
+
 ## iPhone (Safari) 1.3.5 — ottobre 2026
 **Novità**
 - Account riconosciuto dal sito: la verifica della squadra FLE, l'Area Admin e i dati FLE valgono solo per l'account collegato;
