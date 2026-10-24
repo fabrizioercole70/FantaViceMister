@@ -1,20 +1,26 @@
 {
-  "versione": "1.3.4",
-  "data": "2026-10-11",
+  "versione": "1.3.5",
   "novita": [
-    "Consegne ufficiali Leghe Fantacalcio Classic con gli stati del sito: inviata via web o via app, modificata dall'admin, Recuperata dal Server, Sconfitta a tavolino, Formazione non inserita.",
-    "In rosso tenue i recuperi dal server, le sconfitte a tavolino e le formazioni non inserite.",
-    "SOLO LEGA: cambiando lega, PASSO 1 e FAI O MODIFICA seguono la lega scelta e restano in SOLO LEGA.",
-    "Nella Home compare il riquadro AGGIORNA ORA quando esce una nuova versione, con «Cosa cambia»."
+    "Account riconosciuto dal sito: verifica della squadra FLE, Area Admin e dati FLE valgono solo per l'account collegato.",
+    "VERIFICA SQUADRA FLE nella Home: LEGA + FLE, SOLO FLE e MODIFICA SU FLE solo con la squadra FLE verificata; SOLO LEGA funziona sempre.",
+    "SWITCH: scegli tu quale usare, verifica dopo il salvataggio, storico per giornata e competizione.",
+    "Confronto con i 25 FLE: moduli ammessi, rosa non conforme bloccata, esclusi dalla panchina con il motivo.",
+    "Fantaclub: competizioni e giornate lette dal sito, regola di mancata consegna, CAMBIA LEGA con accesso diretto alla pagina Consegna.",
+    "Area Admin: consegne FLE per competizione e turno, AGGIORNA TUTTI I TURNI DELLE COMPETIZIONI, consegne ufficiali separate per piattaforma.",
+    "Niente audio delle pagine del sito durante le schermate e le letture di Fanta Vice Mister.",
+    "Dopo un aggiornamento compare una volta il riepilogo delle novità."
   ],
   "correzioni": [
-    "Area Admin FLE: niente più falsi «0/80»; le competizioni non lette risultano «non verificate» e il controllo è segnalato come incompleto.",
-    "Area Admin FLE: AGGIORNA funziona anche subito dopo il primo controllo; conservato l'ultimo controllo valido.",
-    "Un errore del server non viene più mostrato come «formazione non consegnata».",
-    "LEGA + FLE solo per la lega FLE associata al tuo account: far parte del circuito non basta."
+    "Area Admin: AGGIORNA del controllo generale non si blocca più su «Pagina FLE non letta» (il sito rispondeva senza dati).",
+    "Consegne per turno: dopo l'inizio ufficiale della giornata, chi non ha la formazione diventa rosso «Senza formazione · scadenza superata»; prima resta «in attesa».",
+    "Le giornate già passate senza formazione restano in rosso anche prima del calcolo ufficiale.",
+    "Se l'inizio della giornata non si riesce a leggere, la squadra risulta «non verificabile», mai «mancante».",
+    "AGGIORNA TUTTI I TURNI usa la giornata FLE appena letta; le competizioni senza partite in quella giornata risultano «nessun turno»."
   ],
   "limitazioni": [
-    "L'aggiornamento si installa dal menu dell'estensione Userscripts: Fanta Vice Mister guida i passi ma non può aggiornarsi da solo.",
-    "Leghe Mantra: stati dettagliati delle consegne non ancora disponibili."
+    "Dopo l'aggiornamento può essere chiesta di nuovo VERIFICA SQUADRA FLE: ora la verifica vale per l'account collegato.",
+    "Scadenza: Fanta Vice Mister usa l'inizio ufficiale della giornata indicato da FLE. I termini anticipati delle singole leghe non sono ancora gestiti: saranno verificati in seguito.",
+    "Leghe Mantra: stati dettagliati delle consegne non ancora disponibili.",
+    "L'aggiornamento si installa dal menu dell'estensione Userscripts: Fanta Vice Mister guida i passi ma non può aggiornarsi da solo."
   ]
 }

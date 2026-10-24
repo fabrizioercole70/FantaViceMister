@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fanta Vice Mister
 // @description  Fanta Vice Mister per Safari (iPhone e Mac) e browser PC: ordine della panchina, controllo e invio su FLE, area admin.
-// @version      1.3.4
+// @version      1.3.5
 // @updateURL    https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @downloadURL  https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @match        https://leghe.fantacalcio.it/*
@@ -18,13 +18,13 @@
   // 1.0: sulla pagina della guida lo script lascia solo un segnale,
   // cosi la guida capisce da sola che Fanta Vice Mister e installato e attivo.
   if (location.hostname === "fabrizioercole70.github.io") {
-    try { document.documentElement.setAttribute("data-fvm-versione", "1.3.4"); } catch (e) {}
+    try { document.documentElement.setAttribute("data-fvm-versione", "1.3.5"); } catch (e) {}
     return;
   }
   if (window.__FVM_SAFARI__) return;
   window.__FVM_SAFARI__ = true;
 
-  var VERSIONE = "1.3.4";
+  var VERSIONE = "1.3.5";
   var PREFISSO = "fvm_";
 
   // ---------------------------------------------------------------- 1.1.0 Fantaclub · fase 2: passaggio tra domini
@@ -35,7 +35,8 @@
   var DOMINI_FVM = { leghe: "leghe.fantacalcio.it", fantaclub: "www.fantaclub.it" };
   // tipo -> unico dominio che puo riceverlo (fase 3: richiesta di accesso Fantaclub e conferma di accesso riuscito;
   // fase 4: uscita da Fantaclub e suo esito)
-  var TIPI_PASSAGGIO = { "prova": "fantaclub", "prova-ritorno": "leghe", "accedi": "fantaclub", "login-ok": "leghe",
+  // PROVA14: tolti "prova" e "prova-ritorno" (pulsante di prova PROVA PASSAGGIO FANTACLUB eliminato): ora sono tipi non ammessi
+  var TIPI_PASSAGGIO = { "accedi": "fantaclub", "login-ok": "leghe",
     "esci": "fantaclub", "esci-esito": "leghe",
     // fasi 5-6-10: pagina Consegna della lega, formazione letta, passaggio a SOLO FLE
     "consegna": "fantaclub", "formazione": "leghe", "solo-fle": "leghe",
@@ -229,7 +230,15 @@
         r.stato = "assente"; r.nota = "nessuna formazione nei dati ufficiali della giornata calcolata";
         if (dettaglio) { r.statoUfficiale = "Formazione non inserita"; r.evidenzia = true; }
       }
+      // RC6: turno PRECEDENTE (la sua scadenza e passata: la giornata corrente e successiva), formazioni lette, nessuna formazione = ROSSO
+      // anche se non ancora calcolato (solo contenitori inferiori; il controllo generale non passa avvioDistinto e resta identico)
+      else if (I.avvioDistinto && fase === "da_calcolare") { r.stato = "assente"; r.scaduta = true; r.nota = "scadenza superata (giornata gia passata): nessuna formazione nei dati letti; turno non ancora calcolato"; }
       else if (fase === "da_calcolare") { r.stato = "assente_provvisorio"; r.nota = "giornata non ancora calcolata: dato provvisorio"; }
+      // RC6 (solo con I.avvioDistinto, passato dalle consegne per competizione e turno e dalle consegne ufficiali; il controllo generale
+      // non lo passa e resta identico): SCADENZA SUPERATA (inizio ufficiale della giornata, league/status mstr, letto e passato) + formazioni
+      // lette + nessuna formazione = ROSSO «senza formazione» anche prima del calcolo; inizio non letto = non verificabile, mai rosso
+      else if (I.avvioDistinto && fase === "in_corso" && inizio) { r.stato = "assente"; r.scaduta = true; r.nota = "scadenza superata (inizio della giornata " + fvmOraRoma(inizio) + "): nessuna formazione nei dati letti; turno non ancora calcolato"; }
+      else if (I.avvioDistinto && fase === "in_corso") { r.stato = "non_verificabile"; r.nota = "inizio della giornata non letto: non verificabile"; }
       else if (fase === "consegna_aperta" || fase === "in_corso") { r.stato = "in_attesa"; r.nota = "formazioni altrui visibili solo dopo la scadenza o con l'area admin"; }
       else if (fase === "futura") { r.stato = "futura"; }
       else { r.stato = "non_verificabile"; r.nota = FVM_ND; }
@@ -251,8 +260,166 @@
       maxSostituzioni: "Numero massimo di sostituzioni",
       modificaDopoMercato: "Modifica automaticamente ultima formazione consegnata in seguito ai cambi di mercato",
       gestore: "Nick gestore", altriAdmin: "Altri amministratori" };
-    Object.keys(voci).forEach(function (k) { var i = (righe || []).indexOf(voci[k]); if (i >= 0 && righe[i + 1] != null) V[k] = String(righe[i + 1]); });
+    // PROVA13: un'altra etichetta non vale mai come valore (voce senza valore nella pagina = non letta)
+    var etichette = Object.keys(voci).map(function (k) { return voci[k]; });
+    Object.keys(voci).forEach(function (k) { var i = (righe || []).indexOf(voci[k]); if (i >= 0 && righe[i + 1] != null && etichette.indexOf(String(righe[i + 1])) < 0) V[k] = String(righe[i + 1]); });
     V.letta = !!V.mancataConsegna;
+    return V;
+  }
+  // PROVA13 B1: testi della pagina nell'ordine del documento, SENZA dipendere dal CSS del sito. La pagina Info di Fantaclub tiene
+  // «Consegna e sostituzioni» in una scheda nascosta finche non viene aperta: innerText non la vede (causa di «DATO NON DISPONIBILE»),
+  // i nodi di testo si. Solo testo: nessun clic, nessuna esecuzione di script della pagina.
+  function fvmTestiNodi(doc) {
+    var out = [];
+    (function giro(n, d) {
+      if (!n || d > 60) return;
+      if (n.nodeType === 3) { var t = String(n.nodeValue || "").replace(/\s+/g, " ").trim(); if (t) out.push(t); return; }
+      if (n.nodeType !== 1 && n.nodeType !== 9 && n.nodeType !== 11) return;
+      if (n.nodeType === 1 && /^(SCRIPT|STYLE|NOSCRIPT|TEMPLATE|SELECT|OPTION)$/i.test(String(n.tagName || ""))) return;
+      var figli = n.childNodes || [];
+      for (var i = 0; i < figli.length; i++) giro(figli[i], d + 1);
+    })(doc && (doc.body || doc), 0);
+    return out;
+  }
+  // PROVA13 B2: la regola della lega (pagina Info) prevede che alle squadre senza formazione venga data l'ultima consegnata?
+  function fvmFcRecuperoAutomatico(rg) { return /usa ultima formazione consegnata/i.test(String(rg && rg.mancataConsegna || "")); }
+  // PROVA13 B3: giornate offerte dal selettore ufficiale «giornata» della pagina Formazioni passate (solo i valori presenti nella
+  // pagina: mai numeri inventati; esclusa la voce «Scegli giornata...»). Lettura del testo HTML, nessun modulo inviato.
+  function fvmFcOpzioniGiornata(html) {
+    var m = /<select[^>]*\bname\s*=\s*["']?giornata["']?[^>]*>([\s\S]*?)<\/select>/i.exec(String(html || ""));
+    if (!m) return [];
+    var out = [], re = /<option\b([^>]*)>([^<]*)/gi, x;
+    while ((x = re.exec(m[1]))) {
+      var va = /\bvalue\s*=\s*["']?([^"'\s>]*)/i.exec(x[1]), v = String(va ? va[1] : x[2]).trim(); // valore dell'opzione, altrimenti il testo
+      if (/^\d{1,2}$/.test(v) && out.indexOf(v) < 0) out.push(v);
+    }
+    return out.slice(0, 60);
+  }
+  // PROVA14 (punto 4): «0» e un valore presente nel selettore ufficiale (e nel collegamento «Report formazioni non consegnate»
+  // del sito: giornata=0), ma il suo significato non e verificato: nessuna interpretazione inventata
+  function fvmFcEtichettaGiornata(g) { return String(g) === "0" ? "Giornata 0 (valore del selettore del sito, significato non verificato)" : "Giornata " + g + " (giornate passate, numerazione del sito)"; }
+  // PROVA14 (punto 4): allineamento tra giornata scelta nel selettore, giornata richiesta al sito e giornata letta nella pagina.
+  // Il titolo dice SEMPRE la giornata del risultato mostrato; gli avvisi dicono quando non corrisponde alla scelta attuale.
+  function fvmFcAllineamentoGiornata(scelta, F) {
+    scelta = String(scelta || ""); F = F || {};
+    var richiesta = String(F.giornataRichiesta || ""), corrente = String((F.stato || {}).giornata || "?"), GP = F.giornataPrecedente || null, avvisi = [];
+    if (scelta !== richiesta) avvisi.push("Hai scelto " + (scelta ? "la giornata " + scelta : "la giornata corrente") + ", ma il risultato qui sotto è della richiesta precedente (" + (richiesta ? "giornata " + richiesta : "giornata corrente") + "): premi AGGIORNA SU FANTACLUB.");
+    if (richiesta && GP && GP.giornata && String(GP.giornata) !== richiesta) avvisi.push("Il sito ha mostrato la giornata " + GP.giornata + " invece della giornata " + richiesta + " richiesta: elenco da verificare sul sito.");
+    if (richiesta && !GP) avvisi.push("Elenco della giornata " + richiesta + " non letto.");
+    return { richiesta: richiesta, titolo: richiesta ? "giornata scelta " + richiesta + " (giornata passata) · giornata corrente " + corrente : "giornata corrente " + corrente, avvisi: avvisi };
+  }
+  // PROVA15 (C4 verificata sulle pagine reali): COMPETIZIONI FANTACLUB con un motore GENERICO, valido per qualsiasi lega (nessun nome,
+  // cid o lega preimpostati). Fonte: pagina «Tornei» della lega (/servlet/TorneoGironi?_nl=<lega>), letta con GET come documento inerte:
+  // le schede sono pulsanti con l'indirizzo nell'attributo onclick («window.location.href='/servlet/<Pagina>?cid=<n>&_nl=<lega>'»),
+  // letto SOLO come testo (mai eseguito). Vale come competizione qualsiasi pagina /servlet/<Pagina> con cid numerico e la STESSA lega.
+  // Indirizzo di una competizione: { pagina, cid } oppure { scarto: motivo } oppure null (non e un indirizzo di competizione)
+  function fvmFcUrlCompetizione(u, nl) {
+    var s = String(u || "").trim().replace(/^https?:\/\/(www\.)?fantaclub\.it/i, "");
+    var m = /^\/servlet\/([A-Za-z][A-Za-z0-9_]{0,40})\?([^#\s]*)$/.exec(s);
+    if (!m) return null;
+    var q = {}; m[2].split("&").forEach(function (p) { var i = p.indexOf("="); if (i > 0) { try { q[p.slice(0, i)] = decodeURIComponent(p.slice(i + 1)); } catch (e) {} } });
+    if (!("cid" in q)) return null;
+    if (!/^\d{1,6}$/.test(String(q.cid))) return { scarto: "cid non valido" };
+    if (String(q._nl || "").toLowerCase() !== String(nl || "").toLowerCase()) return { scarto: "altra lega" };
+    return { pagina: m[1], cid: String(Number(q.cid)) };
+  }
+  // tipologia dall'intestazione ufficiale della pagina di una competizione (header.fc-competition-header--<tipo>, titolo, sottotitolo);
+  // giornate di svolgimento SOLO se il regolamento della pagina le scrive («Giornate di campionato in cui si svolge: …»)
+  function fvmFcIntestazioneCompetizione(doc) {
+    try {
+      var h = doc.querySelector("header[class*='fc-competition-header--']");
+      if (!h) return null;
+      var t = function (sel) { var e = h.querySelector(sel); return e ? String(e.textContent || "").replace(/\s+/g, " ").trim().slice(0, 120) : ""; };
+      var tipo = (/fc-competition-header--([a-z0-9_-]+)/i.exec(String(h.getAttribute("class") || "")) || [])[1] || "";
+      var reg = doc.querySelector("#inforegolamento"), g = reg ? /Giornate di campionato in cui si svolge:\s*([0-9][0-9 ,]*)/i.exec(String(reg.textContent || "").replace(/\s+/g, " ")) : null;
+      return { tipo: tipo.toLowerCase().slice(0, 30), titolo: t(".fc-competition-header-title").slice(0, 60), sottotitolo: t(".fc-competition-header-subtitle"), giornate: g ? g[1].replace(/[ ,]+$/, "").trim() : "" };
+    } catch (e) { return null; }
+  }
+  // elenco della pagina «Tornei» (o della pagina di una competizione, che ha le stesse schede). Esiti distinti, mai confusi:
+  // elenco · nessuna_aggiuntiva (messaggio ufficiale «Non sono presenti altre competizioni»: NON e un errore e non dice nulla sul
+  // campionato principale) · non_riconosciuta (ne schede ne messaggio: struttura cambiata o pagina diversa)
+  function fvmFcCompetizioniPagina(doc, nl) {
+    var out = { esito: "non_riconosciuta", voci: [], scartati: { altra_lega: 0, cid_non_valido: 0, doppioni: 0, senza_nome: 0 }, titoloLega: false };
+    try {
+      out.titoloLega = new RegExp("\\blega\\s+" + String(nl || "").replace(/[^a-z0-9_-]/gi, "") + "\\b", "i").test(String(doc.title || ""));
+      var visti = {};
+      Array.prototype.forEach.call(doc.querySelectorAll("[onclick],[href],[data-href]"), function (el) {
+        var oc = /location(?:\.href)?\s*=\s*['"]([^'"]+)['"]/.exec(String(el.getAttribute("onclick") || ""));
+        var u = oc ? oc[1] : el.getAttribute("data-href") || el.getAttribute("href") || "";
+        var c = fvmFcUrlCompetizione(u, nl);
+        if (!c) return;
+        if (c.scarto) { out.scartati[c.scarto === "altra lega" ? "altra_lega" : "cid_non_valido"]++; return; }
+        var nome = String(el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 60);
+        if (!nome) { out.scartati.senza_nome++; return; }
+        var k = c.pagina + ":" + c.cid;
+        if (visti[k]) { out.scartati.doppioni++; if (visti[k].nome.toLowerCase() !== nome.toLowerCase()) visti[k].nomeNonUnivoco = true; return; }
+        visti[k] = { chiave: k, pagina: c.pagina, cid: c.cid, nome: nome, attiva: /(^|\s)active(\s|$)/.test(String(el.getAttribute("class") || "")) };
+        out.voci.push(visti[k]);
+      });
+      out.voci = out.voci.slice(0, 20);
+      if (out.voci.length) out.esito = "elenco";
+      else if (/Non sono presenti altre competizioni/i.test(String(doc.body && doc.body.textContent || ""))) out.esito = "nessuna_aggiuntiva";
+    } catch (e) { out.errore = String(e && e.message || e).slice(0, 120); }
+    return out;
+  }
+  // lettura completa (solo GET della stessa origine): pagina «Tornei», poi UNA pagina per competizione (al massimo 10) solo per la
+  // tipologia. Un errore su una competizione resta su quella competizione; un errore sulla pagina «Tornei» da l'esito «errore».
+  // pagina(percorso) -> Promise { ok, url, testo }; docDa(testo) -> documento inerte (DOMParser)
+  function fvmFcLeggiCompetizioni(pagina, nl, docDa) {
+    var q = "?_nl=" + encodeURIComponent(nl);
+    return pagina("/servlet/TorneoGironi" + q).then(function (p) {
+      if (!p || !p.ok) return { esito: "errore", voci: [], errore: "pagina Tornei non disponibile" };
+      var C = fvmFcCompetizioniPagina(docDa(p.testo), nl);
+      var catena = Promise.resolve();
+      C.voci.slice(0, 10).forEach(function (v) {
+        catena = catena.then(function () {
+          return pagina("/servlet/" + v.pagina + "?cid=" + encodeURIComponent(v.cid) + "&_nl=" + encodeURIComponent(nl)).then(function (pc) {
+            var I = pc && pc.ok ? fvmFcIntestazioneCompetizione(docDa(pc.testo)) : null;
+            if (!I) { v.errore = pc && pc.ok ? "intestazione della competizione non riconosciuta" : "pagina della competizione non disponibile"; return; }
+            v.tipo = I.tipo; v.sottotitolo = I.sottotitolo; v.giornate = I.giornate;
+            v.coerente = !!I.titolo && I.titolo.toLowerCase() === v.nome.toLowerCase(); // il titolo della pagina = nome della scheda
+          }).catch(function (e) { v.errore = String(e && e.message || e).slice(0, 80); });
+        });
+      });
+      return catena.then(function () { return C; });
+    }).catch(function (e) { return { esito: "errore", voci: [], errore: String(e && e.message || e).slice(0, 120) }; });
+  }
+  // tipologia leggibile: SEMPRE il sottotitolo ufficiale della pagina quando c'e; altrimenti il tipo dell'intestazione; altrimenti non letta
+  function fvmFcTipologia(v) {
+    if (!v) return "tipologia non letta";
+    if (v.sottotitolo) return v.sottotitolo + (v.coerente === false ? " (titolo della pagina diverso dal nome della scheda)" : "");
+    if (v.tipo) return "tipologia «" + v.tipo + "» (sottotitolo non presente)";
+    return "tipologia non letta" + (v.errore ? " (" + v.errore + ")" : "");
+  }
+  // testo per schermata e WhatsApp: esito della lettura + regola «Consegna formazioni separata per competizione» della pagina Info.
+  // No = UNA consegna valida per tutte (la scelta di una competizione NON crea consegne, stati o invii separati); Si = stato per singola
+  // competizione SOLO da fonti ufficiali (oggi nessuna individuata: DATO NON DISPONIBILE). C = esito di fvmFcLeggiCompetizioni.
+  function fvmFcCompetizioni(rg, C, scelta) {
+    var sep = String(rg && rg.separataPerCompetizione || ""), voci = C && Array.isArray(C.voci) ? C.voci : [];
+    var unica = /^no(?![a-z])/i.test(sep), separata = /^s[iì](?![a-z])/i.test(sep), esito = C && C.esito || "non_letto";
+    var regola = unica ? "UNA consegna valida per tutte (Info: «Consegna formazioni separata per competizione: No»)"
+      : separata ? "consegna SEPARATA per competizione (Info: «Sì»): lo stato per singola competizione NON è verificabile da FVM" : "consegna per competizione: " + FVM_ND;
+    var elenco = esito === "elenco" ? "Competizioni (pagina «Tornei» del sito): " + voci.map(function (v) { return v.nome; }).join(", ")
+      : esito === "nessuna_aggiuntiva" ? "Nessuna competizione aggiuntiva (pagina «Tornei»: «Non sono presenti altre competizioni in questa lega»)"
+      : esito === "non_riconosciuta" ? "Elenco delle competizioni non letto: pagina «Tornei» con struttura non riconosciuta"
+      : esito === "errore" ? "Elenco delle competizioni non letto: " + (C.errore || "errore di lettura")
+      : "Competizioni non lette (controllo di una versione precedente: premi AGGIORNA)";
+    var v = null; voci.forEach(function (x) { if (x.chiave === String(scelta || "")) v = x; });
+    var nota = !v ? "" : "Competizione scelta: " + v.nome + " · " + fvmFcTipologia(v) + (v.giornate ? " · giornate di svolgimento: " + v.giornate : "") +
+      (unica ? " · con la consegna unica lo stato è lo stesso per tutte le competizioni" : " · stato per singola competizione: " + FVM_ND);
+    return { unica: unica, separata: separata, esito: esito, voci: voci, scelta: v, testo: elenco + " · " + regola, nota: nota,
+      principale: esito === "elenco" || esito === "nessuna_aggiuntiva" ? "Campionato principale della lega: non indicato nelle pagine lette" : "" };
+  }
+  // PROVA13 B1: regole della pagina Info. Prima il testo visibile (come sempre); le voci mancanti si cercano nel testo completo
+  // della pagina (schede nascoste comprese). Un valore e indicato SOLO se la pagina ufficiale lo contiene davvero.
+  function fvmFcInfoCompleta(righe, doc) {
+    var V = fvmFcInfo(righe);
+    var mancano = ["mancataConsegna", "nascoste", "scadenza", "separataPerCompetizione", "gestore", "altriAdmin"].filter(function (k) { return !V[k]; });
+    if (!mancano.length || !doc) { V.fonte = "pagina Info (scheda visibile)"; return V; }
+    var W = fvmFcInfo(fvmTestiNodi(doc)), aggiunte = [];
+    Object.keys(W).forEach(function (k) { if (k !== "letta" && W[k] && !V[k]) { V[k] = W[k]; aggiunte.push(k); } });
+    V.letta = !!V.mancataConsegna;
+    V.fonte = aggiunte.length ? "pagina Info (anche schede chiuse: " + aggiunte.join(", ") + ")" : "pagina Info (scheda visibile)";
     return V;
   }
   // Squadre: elenco delle squadre (h3) e account scritto subito dopo il nome
@@ -345,7 +512,8 @@
       var pd = el("presente"); if (pd.length) { righe.push("🟢 Formazione presente (" + pd.length + ")"); pd.forEach(function (r) { righe.push("• " + r.squadra + " · " + (r.statoUfficiale || FVM_ND) + " · " + r.ora + mod(r) + (r.invisibile ? " · invisibile" : "") + all(r)); }); righe.push(""); }
       var rc = el("recuperata"); if (rc.length) { righe.push("🔴 Recuperata dal Server (" + rc.length + ")"); rc.forEach(function (r) { righe.push("• " + r.squadra + " · " + r.ora + mod(r) + all(r)); }); righe.push(""); }
       var tv = el("tavolino"); if (tv.length) { righe.push("🔴 Sconfitta a tavolino (" + tv.length + ")"); tv.forEach(function (r) { righe.push("• " + r.squadra + all(r)); }); righe.push(""); }
-      var ni = el("assente"); if (ni.length) { righe.push("🔴 Formazione non inserita · giornata calcolata (" + ni.length + ")"); ni.forEach(function (r) { righe.push("• " + r.squadra + all(r)); }); righe.push(""); }
+      var ni = el("assente").filter(function (r) { return !r.scaduta; }); if (ni.length) { righe.push("🔴 Formazione non inserita · giornata calcolata (" + ni.length + ")"); ni.forEach(function (r) { righe.push("• " + r.squadra + all(r)); }); righe.push(""); }
+      var ns = el("assente").filter(function (r) { return r.scaduta; }); if (ns.length) { righe.push("🔴 Senza formazione · scadenza superata (" + ns.length + ")"); ns.forEach(function (r) { righe.push("• " + r.squadra + all(r)); }); righe.push(""); }
       var ap2 = el("assente_provvisorio"); if (ap2.length) { righe.push("🟠 Nessuna formazione, giornata da calcolare: provvisorio (" + ap2.length + ")"); ap2.forEach(function (r) { righe.push("• " + r.squadra); }); righe.push(""); }
       var w2 = el("in_attesa"); if (w2.length) { righe.push("⏳ In attesa / non ancora visibili (" + w2.length + ")"); w2.forEach(function (r) { righe.push("• " + r.squadra); }); righe.push(""); }
       var n2 = el("non_verificabile").concat(el("futura")); if (n2.length) { righe.push("❔ Non verificabili (" + n2.length + ")"); n2.forEach(function (r) { righe.push("• " + r.squadra + (r.nota ? " · " + r.nota : "")); }); righe.push(""); }
@@ -353,7 +521,8 @@
       return righe.join("\n");
     }
     var p = el("presente"); if (p.length) { righe.push("🟢 Formazione presente (" + p.length + ")"); p.forEach(function (r) { righe.push("• " + r.squadra + " · salvata " + r.ora + (r.invisibile ? " · invisibile" : "")); }); righe.push(""); }
-    var a = el("assente"); if (a.length) { righe.push("🔴 Nessuna formazione (giornata calcolata) (" + a.length + ")"); a.forEach(function (r) { righe.push("• " + r.squadra); }); righe.push(""); }
+    var a = el("assente").filter(function (r) { return !r.scaduta; }); if (a.length) { righe.push("🔴 Nessuna formazione (giornata calcolata) (" + a.length + ")"); a.forEach(function (r) { righe.push("• " + r.squadra); }); righe.push(""); }
+    var as = el("assente").filter(function (r) { return r.scaduta; }); if (as.length) { righe.push("🔴 Senza formazione · scadenza superata (" + as.length + ")"); as.forEach(function (r) { righe.push("• " + r.squadra); }); righe.push(""); }
     var ap = el("assente_provvisorio"); if (ap.length) { righe.push("🟠 Nessuna formazione, giornata da calcolare (" + ap.length + ")"); ap.forEach(function (r) { righe.push("• " + r.squadra); }); righe.push(""); }
     var w = el("in_attesa"); if (w.length) { righe.push("⏳ In attesa / non ancora visibili (" + w.length + ")"); w.forEach(function (r) { righe.push("• " + r.squadra); }); righe.push(""); }
     var n = el("non_verificabile").concat(el("futura")); if (n.length) { righe.push("❔ Non verificabili (" + n.length + ")"); n.forEach(function (r) { righe.push("• " + r.squadra); }); righe.push(""); }
@@ -362,10 +531,22 @@
   }
   function fvmReportFc(R) {
     var S = R.stato || {}, el = function (st) { return (S.righe || []).filter(function (r) { return r.stato === st; }); };
-    var righe = ["📋 CONTROLLO CONSEGNE · " + R.lega + " (Fantaclub)", "Giornata " + (S.giornata || "?") + " (numerazione del sito)",
-      "Controllo: " + (R.quando || "") + " · fonte: pagine ufficiali della lega", "Mancata consegna (regola della lega): " + (R.regola && R.regola.mancataConsegna ? R.regola.mancataConsegna : FVM_ND), ""];
+    // PROVA14 (punti 3 e 4): giornata scelta e giornata corrente sempre distinte. PROVA15: competizioni dal motore generico (pagina
+    // «Tornei») con la regola della consegna (unica = valida per tutte: nessuna consegna separata inventata)
+    var richiesta = String(R.giornataRichiesta || ""), GP = R.giornataPrecedente || null, CF = fvmFcCompetizioni(R.regola, R.competizioni, R.competizione || "");
+    var righe = ["📋 CONTROLLO CONSEGNE · " + R.lega + " (Fantaclub)", richiesta ? "Giornata scelta " + richiesta + " (giornata passata) · giornata corrente " + (S.giornata || "?") + " · numerazione del sito" : "Giornata corrente " + (S.giornata || "?") + " (numerazione del sito)",
+      "Controllo: " + (R.quando || "") + " · fonte: pagine ufficiali della lega", CF.testo].concat(CF.principale ? [CF.principale] : []).concat(CF.nota ? [CF.nota] : []).concat(["Mancata consegna (regola della lega): " + (R.regola && R.regola.mancataConsegna ? R.regola.mancataConsegna : FVM_ND), ""]);
+    if (richiesta) {
+      var gc = GP && GP.consegnate || [];
+      righe.push("📅 Giornata " + richiesta + " (passata scelta): " + (GP ? gc.length + " formazioni elencate dal sito" + (GP.giornata && String(GP.giornata) !== richiesta ? " ⚠️ la pagina del sito indica la giornata " + GP.giornata : "") : "elenco non letto"));
+      gc.forEach(function (c) { righe.push("• " + c.squadra + (c.account ? " (" + c.account + ")" : "") + (c.ora ? " · " + c.ora : "")); });
+      righe.push("", "Giornata corrente " + (S.giornata || "?") + " (consegne in corso):");
+    }
     var c = el("consegnata"); if (c.length) { righe.push("🟢 Consegnate (" + c.length + ")"); c.forEach(function (r) { righe.push("• " + r.squadra + " (" + r.account + ") · " + r.ora + (r.canale && r.canale !== FVM_ND ? " · tramite " + r.canale : "")); }); righe.push(""); }
-    var nc = el("non_consegnata"); if (nc.length) { righe.push("🔴 Senza formazione, elenco ufficiale (" + nc.length + ")"); nc.forEach(function (r) { righe.push("• " + r.squadra + " (" + r.account + ")"); }); righe.push(""); }
+    var nc = el("non_consegnata"); if (nc.length) { righe.push("🔴 Senza formazione, elenco ufficiale (" + nc.length + ")"); nc.forEach(function (r) { righe.push("• " + r.squadra + " (" + r.account + ")"); });
+      // PROVA13 B2: recupero automatico previsto dalla regola = NON una consegna
+      if (/usa ultima formazione consegnata/i.test(String(R.regola && R.regola.mancataConsegna || ""))) righe.push("(per regola della lega riceveranno l'ultima formazione consegnata: recupero automatico, non una consegna)");
+      righe.push(""); }
     var nv = el("non_verificabile"); if (nv.length) { righe.push("❔ Non verificabili (" + nv.length + ")"); nv.forEach(function (r) { righe.push("• " + r.squadra + (r.nota ? " · " + r.nota : "")); }); righe.push(""); }
     return righe.join("\n").replace(/\n+$/, "");
   }
@@ -402,14 +583,40 @@
     box.remove();
     return { righe: righe, doc: doc, titolo: String((doc.querySelector("title") || {}).textContent || "").trim() };
   }
+  // PROVA15: documento inerte da un testo HTML (DOMParser: nessuno script eseguito, nessuna risorsa caricata)
+  function fvmFcDocumento(t) { return new DOMParser().parseFromString(String(t || ""), "text/html"); }
+  // PROVA15 (audio): pagina Fantaclub usata SOLO come appoggio della lettura delle Consegne ufficiali: caricamento fermato (window.stop),
+  // play() rifiutato, audio/video muti e fermi, riquadri (iframe) tolti, anche quelli aggiunti dopo. Non vale per le pagine che
+  // l'utente usa (consegna, barra FVM): li resta la protezione normale che lascia funzionare i lettori del sito.
+  function fvmFcSilenzia() {
+    var r = { fermata: false, media: 0, iframe: 0 };
+    try { if (typeof window.stop === "function") { window.stop(); r.fermata = true; } } catch (e) {}
+    var zitto = function (m) { try { m.muted = true; m.autoplay = false; m.pause(); r.media++; } catch (e) {} };
+    var togli = function (n) {
+      try {
+        if (!n || n.nodeType !== 1) return;
+        if (n.tagName === "VIDEO" || n.tagName === "AUDIO") zitto(n);
+        else if (n.tagName === "IFRAME") { n.src = "about:blank"; n.remove(); r.iframe++; }
+        if (n.querySelectorAll) Array.prototype.forEach.call(n.querySelectorAll("video,audio,iframe"), togli);
+      } catch (e) {}
+    };
+    try { var MP = window.HTMLMediaElement && window.HTMLMediaElement.prototype; if (MP) MP.play = function () { zitto(this); try { return Promise.reject(new DOMException("FVM: lettura in corso", "NotAllowedError")); } catch (e) { return Promise.resolve(); } }; } catch (e) {}
+    try { if (document.documentElement) togli(document.documentElement); } catch (e) {}
+    try { if (window.MutationObserver && document.documentElement) new MutationObserver(function (l) { l.forEach(function (m) { Array.prototype.forEach.call(m.addedNodes || [], togli); }); }).observe(document.documentElement, { childList: true, subtree: true }); } catch (e) {}
+    try { document.addEventListener("play", function (ev) { togli(ev.target); }, true); } catch (e) {}
+    return r;
+  }
   function eseguiControlloFc(msg) {
     var dati = msg.dati || {}, nl = NL_VALIDO.test(String(dati.nl || "")) ? String(dati.nl) : "";
     var giornata = /^\d{1,2}$/.test(String(dati.giornata || "")) ? String(dati.giornata) : "";
     var esito = { richiesta: msg.id, nl: nl, quando: Date.now(), errori: [] };
+    // PROVA15 (audio): questa pagina serve solo da appoggio alla lettura (l'utente non la usa): caricamento della pagina fermato,
+    // nessun audio/video e nessun riquadro di altri siti per tutta la lettura. Prima la protezione mancava del tutto qui.
+    esito.audio = fvmFcSilenzia();
     var box = null;
     function stato(t) {
       try {
-        if (!box && document.body) { box = document.createElement("div"); box.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:2147483647;background:#0b1730;color:#fff;font:600 15px -apple-system,Arial;padding:18px;border-bottom:3px solid #e2b33c;text-align:center"; document.body.appendChild(box); }
+        if (!box && (document.body || document.documentElement)) { box = document.createElement("div"); box.style.cssText = "position:fixed;left:0;right:0;top:0;z-index:2147483647;background:#0b1730;color:#fff;font:600 15px -apple-system,Arial;padding:18px;border-bottom:3px solid #e2b33c;text-align:center"; (document.body || document.documentElement).appendChild(box); }
         if (box) box.textContent = "Fanta Vice Mister · controllo Fantaclub (sola lettura) · " + t;
       } catch (e) {}
     }
@@ -427,12 +634,13 @@
     }
     if (!nl) { esito.errori.push("lega Fantaclub non valida"); setTimeout(fine, 50); return; }
     var q = "?_nl=" + encodeURIComponent(nl);
+    if (giornata) esito.giornataRichiesta = giornata; // PROVA14 (punto 4): la richiesta resta registrata anche se la lettura non riesce
     setTimeout(function () {
       stato("leggo le regole della lega…");
       pagina("/servlet/Informazioni" + q).then(function (p) {
         var I = fvmRigheHtml(p.testo);
         if (I.righe.indexOf("Informazioni generali") < 0) throw new Error("accesso a Fantaclub non attivo o lega non accessibile con questo account");
-        esito.regola = fvmFcInfo(I.righe);
+        esito.regola = fvmFcInfoCompleta(I.righe, I.doc); // PROVA13 B1: anche la scheda «Consegna e sostituzioni» chiusa
         stato("leggo le squadre…");
         return pagina("/servlet/ElencoSquadre" + q);
       }).then(function (p) {
@@ -453,16 +661,22 @@
       }).then(function (p) {
         var Lg = fvmRigheHtml(p.testo);
         esito.log = fvmFcLog(Lg.righe, (esito.squadre || []).map(function (x) { return x.squadra; })).slice(0, 40);
-        if (!giornata) return null;
-        stato("leggo la giornata " + giornata + "…");
-        return pagina("/servlet/FormazioniPassate" + q + "&giornata=" + giornata);
+        // PROVA13 B3: la pagina Formazioni passate si legge sempre (GET, come il sito): il suo selettore «giornata» da le giornate
+        // REALI disponibili per la scelta; con una giornata scelta, anche le formazioni di quella giornata (come prima)
+        stato(giornata ? "leggo la giornata " + giornata + "…" : "leggo le giornate disponibili…");
+        return pagina("/servlet/FormazioniPassate" + q + (giornata ? "&giornata=" + giornata : ""));
       }).then(function (p) {
-        if (p) { var Pa = fvmRigheHtml(p.testo); esito.giornataPrecedente = fvmFcPassate(Pa.righe, (esito.squadre || []).map(function (x) { return x.squadra; })); esito.giornataRichiesta = giornata; }
+        if (p) esito.giornate = fvmFcOpzioniGiornata(p.testo);
+        if (p && giornata) { var Pa = fvmRigheHtml(p.testo); esito.giornataPrecedente = fvmFcPassate(Pa.righe, (esito.squadre || []).map(function (x) { return x.squadra; })); }
         stato("leggo l'account collegato…");
         return pagina("/servlet/FormazioniReport");
       }).then(function (p) {
         var t = fvmRigheHtml(p.testo).titolo, m = /Report formazioni di (.+)$/.exec(t);
         if (m) esito.account = m[1].trim().slice(0, 40);
+        // PROVA15: competizioni con il motore generico (pagina «Tornei» + una pagina per competizione per la tipologia; GET, documento
+        // inerte, nessuno script del sito eseguito). Un errore qui NON annulla il resto del controllo: l'esito lo dice.
+        stato("leggo le competizioni (Tornei)…");
+        return fvmFcLeggiCompetizioni(pagina, nl, fvmFcDocumento).then(function (C) { esito.competizioni = C; });
       }).catch(function (e) {
         esito.errori.push(String(e && e.message || e).slice(0, 160));
       }).then(function () { stato("fatto: torno a Fanta Vice Mister…"); setTimeout(fine, 300); });
@@ -778,7 +992,7 @@
         m.__fvmPronto = true;
         try {
           m.muted = true; m.setAttribute("muted", ""); m.autoplay = false; m.removeAttribute("autoplay");
-          if (!m.paused && !gestoSu(m)) { m.pause(); conta.play++; logAudio("partenza automatica impedita"); }
+          if (!m.paused && !gestoSu(m)) { m.pause(); conta.play++; logAudio("partenza automatica impedita", m); }
           conta.muti++;
         } catch (e) {}
       };
@@ -789,13 +1003,13 @@
       var playFvm = function () {
         try {
           if (attiva) {
-            if (mediaPub(this)) { fermaMedia(this); conta.play++; logAudio("pubblicita fermata"); return bloccato(); }
+            if (mediaPub(this)) { fermaMedia(this); conta.play++; logAudio("pubblicita fermata", this); return bloccato(); }
             preparaLettore(this);
             // partenza automatica (nessun tocco su questo lettore): non parte, come la politica autoplay di Safari
             // (dopo un Play dell'utente il lettore puo richiamare play() poco dopo: caricamento, pre-roll; vale finche
             // l'utente non preme Pausa)
             if (gestoSu(this)) this.__fvmUtente = true;
-            if (!this.__fvmUtente) { try { this.pause(); } catch (e) {} conta.play++; logAudio("partenza automatica impedita"); return bloccato(); }
+            if (!this.__fvmUtente) { try { this.pause(); } catch (e) {} conta.play++; logAudio("partenza automatica impedita", this); return bloccato(); }
             // Play premuto dall'utente: parte, ma MUTO finche l'utente non attiva l'audio dal comando volume
             if (!this.__fvmAudioOk) this.muted = true;
           }
@@ -807,10 +1021,10 @@
         var m = ev.target;
         if (!attiva || !m || (m.tagName !== "VIDEO" && m.tagName !== "AUDIO")) return;
         try {
-          if (mediaPub(m)) { fermaMedia(m); conta.play++; logAudio("pubblicita fermata"); return; }
+          if (mediaPub(m)) { fermaMedia(m); conta.play++; logAudio("pubblicita fermata", m); return; }
           preparaLettore(m);
           if (gestoSu(m)) m.__fvmUtente = true;
-          if (!m.__fvmUtente) { m.pause(); conta.play++; logAudio("partenza automatica impedita"); return; }
+          if (!m.__fvmUtente) { m.pause(); conta.play++; logAudio("partenza automatica impedita", m); return; }
           if (!m.__fvmAudioOk && !m.muted) m.muted = true;
         } catch (e) {}
       };
@@ -825,12 +1039,19 @@
         var m = ev.target;
         if (!attiva || !m || (m.tagName !== "VIDEO" && m.tagName !== "AUDIO") || m.muted || !(m.volume > 0)) return;
         try {
-          if (!mediaPub(m) && gestoVolume(m)) { m.__fvmAudioOk = true; logAudio("audio attivato dall'utente"); return; }
-          m.muted = true; logAudio("audio non richiesto rimesso muto");
+          if (!mediaPub(m) && gestoVolume(m)) { m.__fvmAudioOk = true; logAudio("audio attivato dall'utente", m); return; }
+          m.muted = true; logAudio("audio non richiesto rimesso muto", m);
         } catch (e) {}
       };
       var audioLoggato = {};
-      var logAudio = function (cosa) { if (audioLoggato[cosa]) return; audioLoggato[cosa] = 1; logFc("FANTACLUB AUDIO", { esito: cosa }); };
+      // PROVA15 (diagnosi): anche quale elemento e da quale sito (solo il dominio, mai l'indirizzo completo); una riga per esito e sorgente
+      var logAudio = function (cosa, m) {
+        var sorg = "", tag = "";
+        try { tag = m && m.tagName ? m.tagName.toLowerCase() : ""; sorg = m ? dominio(m.currentSrc || m.src || "") || (String(m.currentSrc || m.src || "").indexOf("blob:") === 0 ? "flusso della pagina" : "") : ""; } catch (e) {}
+        var k = cosa + "|" + tag + "|" + sorg;
+        if (audioLoggato[k]) return; audioLoggato[k] = 1;
+        logFc("FANTACLUB AUDIO", { esito: cosa, elemento: tag || "non indicato", sorgente: sorg || "non indicata", pagina: location.pathname });
+      };
       var scriptBloccato = function (n) {
         try { return attiva && n && n.tagName === "SCRIPT" && n.src && diDominio(dominio(n.src), DOMINI_SCRIPT); } catch (e) { return false; }
       };
@@ -1146,13 +1367,17 @@
           var x = riepilogo();
           if (x.nascosti || x.overlay || x.video || x.iframe || x.script || x.play || x.muti || x.veli)
             logFc("FANTACLUB PUBBLICITA", { pagina: location.pathname, nascosti: x.nascosti, overlay: x.overlay, video: x.video, iframe: x.iframe, script: x.script, audio: x.play, muti: x.muti, veli: x.veli });
+          // PROVA15 (diagnosi audio): riquadri di altri siti RIMASTI nella pagina (FVM non puo silenziarli dall'esterno, solo toglierli
+          // se riconosciuti come pubblicita) e lettori presenti: solo domini e numeri
+          var rim = {}, nM = 0;
+          Array.prototype.forEach.call(document.querySelectorAll("iframe"), function (f) { var d = dominio(f.src || ""); if (d && d !== location.hostname) rim[d] = (rim[d] || 0) + 1; });
+          Array.prototype.forEach.call(document.querySelectorAll("video,audio"), function () { nM++; });
+          if (Object.keys(rim).length || nM) logFc("FANTACLUB AUDIO", { esito: "controllo dopo 4 s", lettori: nM, riquadriAltriSiti: Object.keys(rim).slice(0, 8).map(function (d) { return d + (rim[d] > 1 ? "×" + rim[d] : ""); }).join(","), pagina: location.pathname });
         } catch (e) {}
       }, 4000);
     }
     var arrivo = riceviPassaggio();
-    var prova = null;
     if (arrivo) {
-      if (arrivo.ok && arrivo.msg.tipo === "prova") prova = { id: arrivo.msg.id };
       // fase 3: ACCEDI dalla Home FVM: lo ricordo nella scheda (il login del sito puo ricaricare la pagina)
       if (arrivo.ok && arrivo.msg.tipo === "accedi") { try { sessionStorage.setItem(PREFISSO + "fc_accesso", JSON.stringify({ id: arrivo.msg.id, at: Date.now() })); } catch (e) {} }
       // fase 4: DISCONNETTI Fantaclub dalla Home FVM (un eventuale accesso in sospeso non serve piu)
@@ -1175,7 +1400,7 @@
           sessionStorage.setItem(PREFISSO + "fc_consegna", JSON.stringify({ id: arrivo.msg.id, at: Date.now(), nl: nl, lega: nl ? nomeLegaDa(circ, nl) : "", circuito: circ, modo: dc.modo === "solo_lega" ? "solo_lega" : "lega_fle", rimbalzi: 0 }));
         } catch (e) {}
       }
-      logFc("PASSAGGIO", arrivo.ok ? { tipo: arrivo.msg.tipo, esito: "ricevuto", ms: arrivo.eta } : { tipo: arrivo.tipo || "", esito: "scartato", motivo: arrivo.motivo });
+      logFc("PASSAGGIO", arrivo.ok ? { tipo: arrivo.msg.tipo, esito: "ricevuto", ms: arrivo.eta, pagina: location.pathname, paginaAccesso: /login|accedi|Entra/i.test(location.pathname) } /* PROVA15 diagnosi */ : { tipo: arrivo.tipo || "", esito: "scartato", motivo: arrivo.motivo });
     }
     // fase 3: accesso Fantaclub richiesto da FVM (valido 15 minuti nella stessa scheda)
     function accessoInCorso() {
@@ -1323,11 +1548,53 @@
     var TESTO_FUORI_FLE = "Questa lega non appartiene al circuito FLE. La formazione non può essere inviata a FLE.";
     // lega verificata fuori dal circuito FLE: SOLO LEGA e l'unica modalita possibile (scelta da sola)
     function modoPerLegaFc(c) {
+      // RC3 (come Android): SOLO LEGA scelto da FVM finché la lega non è riconosciuta nel circuito; riconosciuta = LEGA + FLE
+      if (c && c.modoAuto && c.nlVerificata && statoLegaFc(c) === "circuito") { c.modo = "lega_fle"; c.modoAuto = false; salvaConsegna(c); logFc("FANTACLUB MODO", { modo: "lega_fle", perche: "lega riconosciuta nel circuito FLE" }); return; }
+      if (c && statoLegaFc(c) === "verifica" && c.modo !== "solo_lega") { c.modo = "solo_lega"; c.modoAuto = true; salvaConsegna(c); logFc("FANTACLUB MODO", { modo: "solo_lega", perche: "lega da riconoscere" }); return; }
       if (!c || statoLegaFc(c) !== "fuori" || c.modo === "solo_lega") return;
       c.modo = "solo_lega"; salvaConsegna(c);
       logFc("FANTACLUB MODO", { modo: "solo_lega", perche: "lega fuori dal circuito FLE" });
     }
     function fineConsegna() { try { sessionStorage.removeItem(PREFISSO + "fc_consegna"); } catch (e) {} }
+    // RC3 (stesso testo di Android FC_GUIDA_CONSEGNA_JS): fuori dalla pagina Consegna evidenzia il comando CONSEGNA del sito
+    function guidaConsegnaFc() {
+      if (window.__fvmFcGuida) return true; window.__fvmFcGuida = 1;
+      var tag = null, el = null, giri = 0;
+      var testo = function(x){ return String(x && (x.innerText || x.textContent) || '').replace(/\s+/g, ' ').trim(); };
+      var trova = function(){
+        var c = document.querySelectorAll('a,button,[role="button"],li,span,div'), best = null;
+        for (var i = 0; i < c.length && i < 4000; i++) {
+          var t = testo(c[i]);
+          if (!t || t.length > 22 || !/^cons(e(g(n(a)?)?)?)?(\s+formazione)?\.*$/i.test(t)) continue;
+          var r = c[i].getBoundingClientRect();
+          if (r.width < 8 || r.height < 8) continue;
+          var a = c[i].closest ? (c[i].closest('a,button,[role="button"]') || c[i]) : c[i];
+          best = a; break;
+        }
+        return best;
+      };
+      var togli = function(){ try { if (tag) tag.remove(); } catch(e){} tag = null; if (el) { try { el.style.outline = ''; el.style.boxShadow = ''; } catch(e){} } el = null; };
+      var giro = function(){
+        giri++;
+        if (/ConsegnaFormazione/i.test(location.pathname)) { togli(); return; }
+        var x = trova();
+        if (!x) { togli(); return; }
+        if (x !== el) { togli(); el = x; }
+        try { el.style.outline = '3px solid #e6bd56'; el.style.outlineOffset = '2px'; el.style.boxShadow = '0 0 0 6px rgba(230,189,86,.35)'; } catch(e){}
+        if (!tag) { tag = document.createElement('div'); tag.setAttribute('data-fvm-guida', '1');
+          tag.style.cssText = 'position:fixed;z-index:2147483646;pointer-events:none;background:#e6bd56;color:#0b1320;font:900 12px -apple-system,Roboto,sans-serif;padding:5px 8px;border-radius:9px;box-shadow:0 2px 8px rgba(0,0,0,.4);max-width:70vw';
+          (document.body || document.documentElement).appendChild(tag); }
+        var r = el.getBoundingClientRect(), vw = window.innerWidth || 360, fuori = r.right > vw - 4;
+        tag.textContent = fuori ? 'FVM · TOCCA CONSEGNA (scorri a destra) ▶' : 'FVM · TOCCA CONSEGNA ▼';
+        var w = tag.offsetWidth || 160, h = tag.offsetHeight || 24;
+        var left = fuori ? Math.max(4, vw - w - 4) : Math.min(Math.max(4, r.left + r.width / 2 - w / 2), vw - w - 4);
+        var top = r.top - h - 8; if (top < 4) top = r.bottom + 8;
+        tag.style.left = left + 'px'; tag.style.top = top + 'px';
+      };
+      var t = setInterval(function(){ try { giro(); } catch(e){} if (giri > 600) { clearInterval(t); togli(); } }, 700);
+      try { window.addEventListener('scroll', function(){ try { if (el) giro(); } catch(e){} }, true); } catch(e){}
+      return true;
+    }
     var parametro = function (k) { var m = String(location.search || "").match(new RegExp("[?&]" + k + "=([^&#]*)")); try { return m ? decodeURIComponent(m[1].replace(/\+/g, " ")) : ""; } catch (e) { return ""; } };
     var paginaConsegna = function () { return /\/servlet\/ConsegnaFormazione/i.test(location.pathname); };
     var paginaConsegnata = function () { return /\/servlet\/Consegna$/i.test(location.pathname); };
@@ -1408,6 +1675,7 @@
     }
     function vegliaConsegna() {
       if (!consegnaInCorso()) return;
+      try { if (!paginaConsegna()) guidaConsegnaFc(); } catch (e) {} // RC3: guida CONSEGNA
       // lega effettiva = _nl della pagina Consegna ufficiale aperta: diventa la lega di questa consegna
       // (niente squadre, letture o sid della lega precedente)
       (function adottaLega() {
@@ -1415,7 +1683,7 @@
         if (!c || !NL_VALIDO.test(qui) || qui === c.nl) return;
         logFc("FANTACLUB LEGA", { da: c.nl || "nessuna", a: qui, come: "pagina Consegna aperta" });
         // passaggio da un'altra lega: modalita predefinita (LEGA + FLE) e verifica da rifare
-        if (c.nl) { c.modo = "lega_fle"; c.nlVerificata = false; }
+        if (c.nl) { c.modo = "solo_lega"; c.modoAuto = true; c.nlVerificata = false; }
         c.nl = qui; c.lega = nomeLegaDa(c.circuito, qui); c.viste = []; c.letta = null; c.errLettura = ""; c.sidProvato = false; c.rimbalzi = 0;
         salvaConsegna(c);
       })();
@@ -1427,7 +1695,7 @@
         // (lega non ancora scelta: invariato, la lega si riconosce solo dalla pagina Consegna)
         if (!c || !c.nl || paginaConsegna() || paginaConsegnata() || !NL_VALIDO.test(qui) || qui === c.nl) return;
         logFc("FANTACLUB LEGA", { da: c.nl, a: qui, come: "pagina della lega aperta dal sito", stato: "da verificare" });
-        c.modo = "lega_fle";
+        c.modo = "solo_lega"; c.modoAuto = true;
         c.nl = qui; c.lega = nomeLegaDa(c.circuito, qui); c.nlVerificata = false; c.viste = []; c.letta = null; c.errLettura = ""; c.sidProvato = false; c.rimbalzi = 0;
         salvaConsegna(c);
       })();
@@ -1551,18 +1819,14 @@
       r.innerHTML = "<style>:host{all:initial}*{box-sizing:border-box;font-family:-apple-system,Arial,sans-serif}.b{position:fixed;right:10px;bottom:calc(env(safe-area-inset-bottom,0px) + 14px);z-index:2147483646;display:flex;align-items:center;gap:8px;" +
         "background:#0d1a2e;border:1px solid #2a4370;border-radius:22px;padding:6px 6px 6px 12px;font:800 12px -apple-system,Arial;color:#e8edf5;box-shadow:0 3px 10px rgba(0,0,0,.35)}" +
         ".t{color:#e2b33c}.ok{color:#4ade80}" + STILE_CHIUDI + "</style>" +
-        "<div class='b'><span class='t'>FVM</span>" + (prova ? "<span class='ok'>Prova ricevuta ✓</span>" : "") +
+        "<div class='b'><span class='t'>FVM</span>" +
         (accessoInCorso() ? "<span>Accedi nella finestra di Fantaclub</span>" : "") +
         (uscitaInCorso() ? "<span>Esco da Fantaclub…</span>" : "") + "<span class='chiudi' id='torna'>CHIUDI</span></div>";
       r.getElementById("torna").addEventListener("click", function () {
         // CHIUDI durante l'accesso: annulla la richiesta (nessun cambio di stato in FVM)
         if (accessoInCorso()) { fineAccesso(); logFc("FANTACLUB ACCESSO", { esito: "annullato con CHIUDI" }); }
         if (uscitaInCorso()) { try { sessionStorage.removeItem(PREFISSO + "fc_esci"); } catch (e) {} logFc("FANTACLUB USCITA", { esito: "annullata con CHIUDI" }); }
-        if (prova) {
-          // prova di andata e ritorno: rimando a FVM solo l'id della prova e l'esito (dati fittizi)
-          logFc("PASSAGGIO", { tipo: "prova-ritorno", esito: "inviato" });
-          inviaPassaggio("leghe", "prova-ritorno", { idProva: prova.id, esito: "ricevuta su Fantaclub" }, "/");
-        } else ritornaAFvm();
+        ritornaAFvm();
       });
     }
     // barra della consegna (fasi 5-6-10) = barra Leghe approvata: nera, fissa IN ALTO, riga unica
@@ -1603,7 +1867,7 @@
       var nota = fuoriCircuito ? ""
         : stato === "verifica" ? (c.modo === "solo_lega" ? AVV_SOLO_LEGA : "") +
           (c.nl ? "<div class='nota'>Lega da verificare: apri la sua pagina Consegna formazione. FLE resta bloccato fino alla verifica.</div>"
-            : "<div class='nota'>Apri la pagina Consegna formazione della tua lega: la riconosco da lì.</div>")
+            : "<div class='nota'>TOCCA IL NOME DELLA TUA LEGA (accanto a ≡ LEGHE), POI CONSEGNA: riconosco lega e squadra da lì. Se vedi solo «Cons», scorri un poco a destra.</div>")
         : c.modo === "solo_lega" ? AVV_SOLO_LEGA : "";
       var tasto = function (id, testo, on) {
         return "<div id='" + id + "'" + (on ? " class='on'" : fuoriCircuito && id !== "m_solo_lega" ? " class='off' aria-disabled='true'" : "") + ">" + testo + "</div>";
@@ -1852,11 +2116,124 @@
   }
   var FLE_SLUG = "fantalegaeuropa-fle";
   var API = "https://apileague.fantacalcio.it";
+  // ================================================================ 1.3.5-RC · IDENTITÀ DELL'ACCOUNT DI LEGHE FANTACALCIO (C5, C5 bis)
+  // Fonte ufficiale: risposta del sito a GET /onboarding/v<n>/profile (versione NON fissata); identificativo = campo utente.id, intero
+  // positivo, stabile tra uscita e nuovo accesso (verificato). Solo risposte 200 con JSON valido: una 304 o un corpo vuoto NON cambiano
+  // nulla. Si conserva SOLO un'impronta PBKDF2-SHA256 (150.000 iterazioni, sale casuale di questo dispositivo): mai utente.id in chiaro,
+  // username, email, cookie o token (neppure nella diagnosi). L'identità separa le sessioni; i PERMESSI restano quelli del sito.
+  var ID_ITERAZIONI = 150000;
+  function eProfiloUfficiale(u) { return /^https:\/\/apileague\.fantacalcio\.it\/onboarding\/v\d{1,2}\/profile(\?|$)/.test(String(u || "")); }
+  function idDaProfilo(testo) {
+    try { var j = JSON.parse(String(testo || "")), id = j && j.utente && j.utente.id; return typeof id === "number" && isFinite(id) && id > 0 && Math.floor(id) === id ? id : 0; } catch (e) { return 0; }
+  }
+  function esadecimale(b) { return Array.prototype.map.call(new Uint8Array(b), function (x) { return ("0" + x.toString(16)).slice(-2); }).join(""); }
+  function saleIdentita() {
+    var s = leggi("id_sale", "");
+    if (!/^[0-9a-f]{32}$/.test(String(s))) { var b = new Uint8Array(16); crypto.getRandomValues(b); s = esadecimale(b); scrivi("id_sale", s); }
+    return s;
+  }
+  function improntaIdentita(id) {
+    var enc = new TextEncoder(), sale = saleIdentita(), sb = new Uint8Array(16);
+    for (var i = 0; i < 16; i++) sb[i] = parseInt(sale.substr(i * 2, 2), 16);
+    return crypto.subtle.importKey("raw", enc.encode("fvm-utente:" + id), "PBKDF2", false, ["deriveBits"]).then(function (k) {
+      return crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: sb, iterations: ID_ITERAZIONI }, k, 128);
+    }).then(esadecimale);
+  }
+  // identità valida per QUESTA scheda e per l'epoca attuale (dopo una pagina di accesso o un cambio di account non vale piu)
+  function identitaAttuale() { var t = sLeggi("identita"); return t && /^[0-9a-f]{32}$/.test(String(t.imp || "")) && Number(t.epoca) === epocaAccount() ? String(t.imp) : ""; }
+  // stato della lettura (in ctl: tenuto solo in memoria per questa pagina)
+  function registraIdentita(id, fonte) {
+    if (!id || ctl.identitaInCorso) return Promise.resolve("");
+    ctl.identitaInCorso = true;
+    return improntaIdentita(id).then(function (imp) {
+      var ultima = String(leggi("identita_ultima", "") || ""), prima = identitaAttuale();
+      if (ultima && ultima !== imp) nuovaEpocaAccount("identità dell'account cambiata"); // nuovo account: nulla del precedente vale piu
+      sScrivi("identita", { imp: imp, epoca: epocaAccount(), at: Date.now() });
+      scrivi("identita_ultima", imp);
+      if (prima !== imp) log("IDENTITA", { esito: ultima && ultima !== imp ? "CAMBIATA (nuovo account)" : ultima ? "confermata" : "letta", impronta: imp.slice(0, 6), fonte: fonte });
+      ctl.identitaInCorso = false;
+      return imp;
+    }).catch(function (e) { ctl.identitaInCorso = false; log("IDENTITA", { esito: "non letta", motivo: "impronta non calcolabile", errore: String(e && e.message || e).slice(0, 60) }); return ""; });
+  }
+  // lettura passiva: risposta del sito al profilo (SOLO stato 200 e JSON valido)
+  function identitaDaRisposta(url, stato, testo) {
+    if (!eProfiloUfficiale(url)) return;
+    ctl.profiloPath = String(url).split("?")[0].replace(API, "");
+    if (Number(stato) !== 200) return; // 304 / errori: nessun cambiamento
+    var id = idDaProfilo(testo);
+    if (id) registraIdentita(id, "risposta del sito"); else log("IDENTITA", { esito: "non letta", motivo: "risposta del profilo senza utente.id valido" });
+  }
+  // lettura attiva (una per pagina, solo se manca un'identita valida): stessa richiesta del sito, senza cache, intestazioni delle LETTURE
+  // del sito tenute solo in memoria (mai salvate)
+  function verificaIdentita(perche) {
+    if (identitaAttuale() || ctl.identitaChiesta || !(ctl.hdrLettura || ctl.hdr) || typeof fetchOriginale !== "function") return;
+    ctl.identitaChiesta = true;
+    var path = /^\/onboarding\/v\d{1,2}\/profile$/.test(String(ctl.profiloPath || "")) ? ctl.profiloPath : "/onboarding/v2/profile";
+    fetchOriginale(API + path, { headers: ctl.hdrLettura || ctl.hdr || {}, credentials: "include", cache: "no-store" }).then(function (r) {
+      return r.text().then(function (t) {
+        if (r.status !== 200) { log("IDENTITA", { esito: "non letta", motivo: "profilo: HTTP " + r.status, perche: perche }); return; }
+        var id = idDaProfilo(t);
+        if (id) registraIdentita(id, "lettura di FVM (" + perche + ")"); else log("IDENTITA", { esito: "non letta", motivo: "risposta del profilo senza utente.id valido", perche: perche });
+      });
+    }).catch(function (e) { log("IDENTITA", { esito: "non letta", motivo: "rete: " + String(e && e.message || e).slice(0, 60), perche: perche }); });
+  }
+  // ================================================================ 1.3.5-RC · SILENZIO SU LEGHE FANTACALCIO durante le schermate di FVM
+  // Prima su Leghe Fantacalcio non c'era nessuna protezione audio (il suono sentito durante l'Area Admin non era attribuibile). Ora, SOLO
+  // mentre e aperta una schermata di FVM (Home, Area Admin, Consegne ufficiali, storico…) o e in corso un'attivita di FVM: lettori della
+  // pagina muti e fermi, play() rifiutato. A schermata chiusa il sito resta com'era. Riquadri di altri siti (pubblicita in iframe): FVM non
+  // li tocca (non si possono silenziare dall'esterno senza toglierli) ma li registra nella diagnosi «LEGHE AUDIO» (solo i domini).
+  var silenzioLegheAttivo = false, audioLegheLog = {};
+  function fvmSchermataAperta() { try { return !!(radice && radice.querySelector && radice.querySelector(".ov")) || !!sLeggi("task"); } catch (e) { return false; } }
+  function logAudioLeghe(cosa, m) {
+    var dom = "", tag = "";
+    try { tag = m && m.tagName ? m.tagName.toLowerCase() : ""; var u = String(m && (m.currentSrc || m.src) || ""); dom = /^https?:/i.test(u) ? new URL(u).hostname : u ? u.split(":")[0] + ":" : "senza src"; } catch (e) {}
+    var k = cosa + "|" + tag + "|" + dom;
+    if (audioLegheLog[k]) return; audioLegheLog[k] = 1;
+    log("LEGHE AUDIO", { esito: cosa, elemento: tag || "non indicato", sorgente: dom || "non indicata", pagina: location.pathname.split("/").slice(0, 3).join("/") });
+  }
+  function fermaMediaLeghe(m, perche) { try { m.muted = true; if (!m.paused) m.pause(); } catch (e) {} logAudioLeghe(perche, m); }
+  function avviaSilenzioLeghe() {
+    if (silenzioLegheAttivo) return;
+    silenzioLegheAttivo = true;
+    try {
+      var MP = window.HTMLMediaElement && window.HTMLMediaElement.prototype;
+      if (MP && typeof MP.play === "function") {
+        var playLeghe = MP.play;
+        MP.play = function () {
+          if (fvmSchermataAperta()) { fermaMediaLeghe(this, "partenza impedita durante una schermata FVM"); try { return Promise.reject(new DOMException("FVM: schermata aperta", "NotAllowedError")); } catch (e) { return Promise.resolve(); } }
+          return playLeghe.apply(this, arguments);
+        };
+      }
+      document.addEventListener("play", function (ev) { var m = ev.target; if (m && /^(VIDEO|AUDIO)$/.test(m.tagName || "") && fvmSchermataAperta()) fermaMediaLeghe(m, "audio/video partito durante una schermata FVM: fermato"); }, true);
+    } catch (e) {}
+  }
+  // all'apertura di una schermata di FVM: lettori fermati e riquadri di altri siti registrati (una riga per dominio)
+  function silenziaLegheOra() {
+    if (!fvmSchermataAperta()) return;
+    try {
+      Array.prototype.forEach.call(document.querySelectorAll("video,audio"), function (m) { if (!m.paused || !m.muted) fermaMediaLeghe(m, "fermato all'apertura di una schermata FVM"); });
+      var dom = {};
+      Array.prototype.forEach.call(document.querySelectorAll("iframe"), function (f) { try { var u = String(f.src || ""); if (/^https?:/i.test(u)) { var d = new URL(u).hostname; if (d !== location.hostname) dom[d] = 1; } } catch (e) {} });
+      var ds = Object.keys(dom).slice(0, 8);
+      if (ds.length && !audioLegheLog["iframe|" + ds.join(",")]) { audioLegheLog["iframe|" + ds.join(",")] = 1; log("LEGHE AUDIO", { esito: "riquadri di altri siti presenti con una schermata FVM aperta (non toccati)", domini: ds.join(",") }); }
+    } catch (e) {}
+  }
+  function testoIdentita() { return "Account di Leghe Fantacalcio non ancora riconosciuto in questa scheda: apri una pagina della tua lega (FVM legge l'account dal sito, sola lettura). Fino ad allora nessuna funzione FLE riservata; SOLO LEGA resta disponibile."; }
   var LOGO_FVM = "data:image/jpeg;base64,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";
   // 1.1.0: logo FantaLegaEuropa per il piede della Home (copia ridotta 200x200 di "logo FLE.png", proporzioni originali)
   var LOGO_FLE = "data:image/jpeg;base64,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";
   // Le 80 squadre: [lega, squadra, tid FLE, tid nella lega]
   var SQUADRE = [["LEGA DEL PIANTO","Ideale Bari",4583705,1011789],["LEGA DEL PIANTO","SCHALKE 104",4288743,1013377],["LEGA DEL PIANTO","Zenith Bari",4289115,1017567],["LEGA DEL PIANTO","Ass Paoloneculone",4290965,1037009],["LEGA DEL PIANTO","ANV Football Club 1990",4463113,1744019],["LEGA DEL PIANTO","REPUBBLICA DI GILEAD",4290230,1744043],["LEGA DEL PIANTO","U.S. TICCHIU",4661797,1744087],["LEGA DEL PIANTO","Lino Banfield",4583348,2623328],["LEGA DEL PIANTO","A.S. Vitin",4670912,3252428],["LEGA DEL PIANTO","Frosinone Culone - Sion",4836989,4837414],["TOTA ITALIA AD VICTORIAM","I CAZZARI",3883604,2997692],["TOTA ITALIA AD VICTORIAM","JUVENTUS MANIA",3890986,4629196],["TOTA ITALIA AD VICTORIAM","Real Banana",3856689,4681538],["TOTA ITALIA AD VICTORIAM","Mer Dal",3871740,4700229],["TOTA ITALIA AD VICTORIAM","Mai Una Gioia",7872699,8423265],["TOTA ITALIA AD VICTORIAM","Baker Street",3883077,8426062],["TOTA ITALIA AD VICTORIAM","BAR SPORT UNITED",3881411,15110114],["TOTA ITALIA AD VICTORIAM","FC Boga Juniors",3883797,19074198],["TOTA ITALIA AD VICTORIAM","SALERNO COSTAS",3871852,19092346],["TOTA ITALIA AD VICTORIAM","Fc Er Duce è Laziale",7784769,19191477],["FANTA FOCOLARE 2","Gin toNico",3856500,2583475],["FANTA FOCOLARE 2","Olympique Sartiglia",3876596,2583889],["FANTA FOCOLARE 2","Gol D. Roggero",3874629,2584018],["FANTA FOCOLARE 2","Rutti di Boskov",3872392,2584170],["FANTA FOCOLARE 2","Lokomotiv Sant€Orsola",3874451,2584516],["FANTA FOCOLARE 2","Real MaiPiu",3876601,2586324],["FANTA FOCOLARE 2","Il Santo Osso Sacro Graal Rotto DC",3883257,2589897],["FANTA FOCOLARE 2","La grande fuga di Lameck Banda",3883293,2592285],["FANTA FOCOLARE 2","atlmalitti",3883308,2618905],["FANTA FOCOLARE 2","Ufficio Sinistri zero",3880147,3617383],["FANTAPINTUS LO SCOPRITORE DI BIDONI","I TALENTI DEL PINTO",4186117,1593677],["FANTAPINTUS LO SCOPRITORE DI BIDONI","SS BARLETTA 1922",4192061,1593795],["FANTAPINTUS LO SCOPRITORE DI BIDONI","AS FAL",4189376,1594454],["FANTAPINTUS LO SCOPRITORE DI BIDONI","Companeros FC",4195025,1595003],["FANTAPINTUS LO SCOPRITORE DI BIDONI","Dos Desperados",4189377,1595777],["FANTAPINTUS LO SCOPRITORE DI BIDONI","Piu KOLO che MUANIma",4198164,1596701],["FANTAPINTUS LO SCOPRITORE DI BIDONI","FC INSIEME SI VOLA",4197802,1600002],["FANTAPINTUS LO SCOPRITORE DI BIDONI","Cuesta non e ibiza",4193606,1600221],["FANTAPINTUS LO SCOPRITORE DI BIDONI","AC MILAN",7680238,1604113],["FANTAPINTUS LO SCOPRITORE DI BIDONI","FC CALL OF DIOUF",6716524,6700723],["POLFER","FC R4iNbow",6706486,996915],["POLFER","Cassiopea",6747402,999334],["POLFER","TSN Kawa",6866666,1035252],["POLFER","napoleon",6752548,1039096],["POLFER","A.C. Avanti Cristo",6893193,1193823],["POLFER","Timberwolves",6866782,1632331],["POLFER","AC Devilteam",7262923,1635839],["POLFER","Piotr",6933887,1639195],["POLFER","Stocastico",6716135,6626512],["POLFER","Dinamo Losca",11753918,6626869],["FANTAROCCOLEGENDSPORT","Fellatium",3857314,2070261],["FANTAROCCOLEGENDSPORT","Buon 65 e mezzo",3892660,2072798],["FANTAROCCOLEGENDSPORT","DOFLAMENGO",3892533,2072867],["FANTAROCCOLEGENDSPORT","MANK TOMINAY",3892600,2072884],["FANTAROCCOLEGENDSPORT","AS PILICUETA",3892591,2073171],["FANTAROCCOLEGENDSPORT","Phramba",3894924,2073184],["FANTAROCCOLEGENDSPORT","LOFFENHEIM",3892674,2074942],["FANTAROCCOLEGENDSPORT","No Mercy",3892932,2077210],["FANTAROCCOLEGENDSPORT","DEJAVU",3892726,2079015],["FANTAROCCOLEGENDSPORT","AC Pappo",3894883,5323275],["LEGA DE NOANTRI","Acr Messina",11776923,10224048],["LEGA DE NOANTRI","FLAMENGO",11691923,10225644],["LEGA DE NOANTRI","Barcelona F.C.",11776908,10225765],["LEGA DE NOANTRI","Pennic Hellas",11822953,10227289],["LEGA DE NOANTRI","Super Santos",11708505,10237038],["LEGA DE NOANTRI","Si Puo Fare",6895801,10244150],["LEGA DE NOANTRI","Gingiskan",11858486,10288764],["LEGA DE NOANTRI","Virtus Roma FC",11838514,10374684],["LEGA DE NOANTRI","Boca Junior",11776593,14854829],["LEGA DE NOANTRI","Temptation Haaland",11733123,18944612],["FANTAVALDINIEVOLE","Big Ramblas",7790602,0],["FANTAVALDINIEVOLE","DieghINDA",7794941,0],["FANTAVALDINIEVOLE","Gli Ingiocabili",7784659,0],["FANTAVALDINIEVOLE","MisterTrip",7845790,0],["FANTAVALDINIEVOLE","Never give up",7789410,0],["FANTAVALDINIEVOLE","Press Team",7785027,0],["FANTAVALDINIEVOLE","Real Gongolo",7784760,0],["FANTAVALDINIEVOLE","Sabonis",7802493,0],["FANTAVALDINIEVOLE","The miraculous",7867526,0],["FANTAVALDINIEVOLE","The Rookie",7802273,0]];
+  // 1.3.5 (come Android 1.3.1): "Ranking di Lega" e "Ranking per Club" sono CLASSIFICHE A PUNTI, nessuna formazione da
+  // consegnare. Riconosciuti dagli identificativi verificati (R0, 13/10/2026) con il nome come controllo ulteriore; un
+  // "Ranking" non noto, o un identificativo noto con un nome diverso, e "da verificare": mai un obbligo di consegna.
+  function naturaCompetizione(c) {
+    var RANKING_FLE = { 885478: "Ranking di Lega", 885485: "Ranking per Club" };
+    var id = Number(c && c.id) || 0, nome = String(c && (c.name || c.nome) || "");
+    var noto = Object.prototype.hasOwnProperty.call(RANKING_FLE, String(id)), conNome = /\branking\b/i.test(nome);
+    if (noto) return !nome || conNome ? "ranking" : "da_verificare";
+    return conNome ? "da_verificare" : "obbligo";
+  }
   var NEED = { 1: 2, 2: 3, 3: 3, 4: 3 };
   var RUOLI = { 1: "P", 2: "D", 3: "C", 4: "A" };
   var COLORE_RUOLO = { 1: "#f1a62b", 2: "#3dae2b", 3: "#1f6feb", 4: "#e2333b" };
@@ -1895,8 +2272,10 @@
   try { pulisciAbbinamentiFc(); } catch (e) {}
   // storico unificato: copia una tantum dello storico precedente (le chiavi originali restano intatte)
   try { storicoMigra(); } catch (e) {}
+  try { if (location.hostname === "leghe.fantacalcio.it") controllaAccessoSito(); } catch (e) {} // PROVA14: possibile cambio di account
+  try { if (location.hostname === "leghe.fantacalcio.it") avviaSilenzioLeghe(); } catch (e) {} // 1.3.5-RC: silenzio durante le schermate FVM
   // 1.1.0 Fantaclub fase 2: passaggio arrivato da Fantaclub (letto e cancellato dall'indirizzo prima del sito).
-  // Per ora solo la prova di andata e ritorno: nella diagnosi va soltanto l'esito, mai i dati.
+  // PROVA14: la vecchia prova di andata e ritorno (PROVA PASSAGGIO FANTACLUB) e stata tolta; nella diagnosi solo l'esito, mai i dati.
   (function () {
     var arrivo = riceviPassaggio();
     if (!arrivo) return;
@@ -1961,9 +2340,10 @@
       var nlS = NL_VALIDO.test(String(dC.nl || "")) ? String(dC.nl) : "";
       if (nlS && dC.nlVerificata) { var primaS = legaFc(); scrivi("fc_lega", { nl: nlS, at: Date.now() }); if (!primaS || primaS.nl !== nlS) log("FANTACLUB LEGA", { lega: nomeLegaFc(nlS), circuito: inCircuitoFc(nlS) ? "FLE" : "fuori", come: "pagina Consegna aperta" }); }
       // lega non verificata dalla sua pagina Consegna: come senza lega (nessun invio FLE senza verifica positiva)
-      var esS = nlS && dC.nlVerificata ? fleFantaclubAmmesso(nlS) : fleFantaclubAmmesso("");
+      // PROVA12: anche la squadra FLE attesa (A1); bloccato = modalita lasciata com'era, nessuna navigazione (A7)
+      var esS = nlS && dC.nlVerificata ? ammessoCampoFleFc(nlS) : fleFantaclubAmmesso("");
       if (!esS.ok) {
-        scrivi("modo", "lega_fle");
+        ripristinaModoBloccato(null, "SOLO FLE bloccato (Fantaclub)");
         log("SOLO FLE BLOCCATO", { piattaforma: "fantaclub", motivo: esS.motivo, lega: esS.lega || "" });
         try { storicoBloccato("solo_fle", nlS, esS.testo); } catch (e) {}
         sScrivi("apri", "main"); sScrivi("flash", esS.testo);
@@ -1975,12 +2355,8 @@
       apriCampoFle(nlS);
       return;
     }
-    var attesa = sLeggi("passaggio_prova");
-    sScrivi("passaggio_prova", null);
-    var giusta = !!(attesa && arrivo.msg.dati && arrivo.msg.dati.idProva === attesa.id);
-    log("PASSAGGIO", { tipo: arrivo.msg.tipo, esito: giusta ? "andata e ritorno OK" : "prova non riconosciuta", ms: attesa ? Date.now() - Number(attesa.at || 0) : null });
-    sScrivi("apri", "main");
-    sScrivi("flash", giusta ? "Prova Fantaclub riuscita ✓ (andata e ritorno)" : "Prova Fantaclub non riconosciuta");
+    // PROVA14: nessun altro tipo e previsto (la vecchia prova di andata e ritorno e stata tolta): ignorato, nessuna azione
+    log("PASSAGGIO", { tipo: arrivo.msg.tipo, esito: "tipo non gestito: ignorato" });
   })();
 
   // ---------------------------------------------------------------- pagine
@@ -2011,7 +2387,24 @@
   var DATI_ACCOUNT = ["lega_sorgente", "lega", "lega_uso", "ultima", "fle", "solo_lega_salvata", "lega_lavoro", "fle_associazione", "fle_fantacalcio", "fle_fantaclub"];
   function azzeraDatiAccount(motivo) {
     DATI_ACCOUNT.forEach(function (k) { try { localStorage.removeItem(PREFISSO + k); } catch (e) {} });
+    nuovaEpocaAccount(motivo);
     log("LEGA SORGENTE", { azione: "dati account azzerati", motivo: motivo });
+  }
+  // PROVA14 (sicurezza): EPOCA DELL'ACCOUNT. FVM non legge l'identita dell'account collegato: ogni possibile cambio di account
+  // (ACCEDI o uscita da FVM, pagina di accesso del sito aperta anche senza FVM) apre una nuova epoca. Sblocco dell'Area Admin,
+  // squadra FLE verificata e «leghe aperte» valgono SOLO nell'epoca in cui sono nati: dopo, servono di nuovo (codice Admin,
+  // VERIFICA SQUADRA FLE, apertura della lega). Nessun dato cancellato: le registrazioni precedenti restano, ma non valgono piu.
+  function epocaAccount() { return Number(leggi("account_epoca", 0)) || 0; }
+  function nuovaEpocaAccount(motivo) {
+    var e = epocaAccount() + 1;
+    scrivi("account_epoca", e); sScrivi("admin_sessione", null); sScrivi("identita", null); // 1.3.5-RC: identita da rileggere
+    try { ctl.identitaChiesta = false; ctl.identitaProgrammata = false; } catch (er) {}
+    log("ACCOUNT", { epoca: e, motivo: motivo, effetto: "Admin, squadra FLE verificata e leghe aperte da confermare" });
+  }
+  // pagina di accesso del sito (anche aperta senza FVM): possibile cambio di account (chiamata una volta all'avvio della pagina)
+  function controllaAccessoSito() {
+    if (!/^\/login/i.test(location.pathname)) return;
+    nuovaEpocaAccount("pagina di accesso del sito");
   }
   function impostaSorgente(slug, motivo) {
     var prima = leggi("lega_sorgente", "");
@@ -2021,6 +2414,11 @@
   }
   function impostaLega(slug) {
     if (!slug || slug === FLE_SLUG) return;
+    // PROVA14 (sicurezza): una pagina aperta da FVM per una sua attivita (CONSEGNE UFFICIALI, controllo o verifica FLE, Area
+    // Admin) NON e una lega aperta dall'utente: non entra tra le leghe note e non puo diventare la lega FLE
+    var tk = sLeggi("task");
+    if (tk) { log("LEGA LETTA DA FVM", { lega: slug, attivita: tk.tipo || "", effetto: "non registrata tra le leghe aperte" }); return; }
+    registraLegaAperta(slug, "pagina della lega aperta");
     // 1.1.0: elenco delle leghe dell'account gia visitate (per SOLO LEGA).
     var note = leggi("leghe_note", []);
     if (note.indexOf(slug) < 0) { note.push(slug); scrivi("leghe_note", note.slice(-12)); log("LEGA NOTA", slug); }
@@ -2029,6 +2427,17 @@
     // Da qui in poi i passaggi temporanei del selettore non possono sostituirla.
     if (!sorgente) { if (legaPrevista(slug)) impostaSorgente(slug, "prima lega prevista vista"); return; }
     if (sorgente === slug && leggi("lega", "") !== slug) scrivi("lega", slug);
+  }
+  // PROVA14: leghe aperte DALL'UTENTE con l'account attuale (epoca): [{ s: lega, e: epoca, at, fonte }]. Le vecchie «leghe_note»
+  // (tutte le epoche, anche pagine aperte da FVM) restano per i loro usi, ma NON compaiono piu come «leghe gia aperte».
+  function legheAperte() { var e = epocaAccount(); return (leggi("leghe_aperte", []) || []).filter(function (x) { return x && x.s && Number(x.e) === e; }); }
+  function registraLegaAperta(slug, fonte) {
+    if (!slug || slug === FLE_SLUG) return;
+    var e = epocaAccount(), l = (leggi("leghe_aperte", []) || []).filter(function (x) { return x && x.s; });
+    if (l.some(function (x) { return x.s === slug && Number(x.e) === e; })) return;
+    l.push({ s: slug, e: e, at: Date.now(), fonte: fonte });
+    scrivi("leghe_aperte", l.slice(-40));
+    log("LEGA APERTA", { lega: slug, epoca: e, fonte: fonte });
   }
   // 1.3.4: LEGA DI LAVORO. Con SOLO LEGA l'utente puo lavorare su un'altra lega del suo account: diventa la lega di
   // PASSO 1 e di FAI O MODIFICA, che resta SOLO LEGA. La lega FLE (lega_sorgente) NON cambia: appartenere al circuito
@@ -2050,9 +2459,69 @@
   }
   // l'ultimo controllo FLE ha letto su FLE una squadra DIVERSA da quella attesa per la lega FLE: account non associato
   function fleNonAssociata() { var a = leggi("fle_associazione", null); return !!(a && a.esito === "diversa" && a.lega === leggi("lega_sorgente", "")); }
+  // ================================================================ 1.3.5 AUTORIZZAZIONE FLE (come Android 1.3.1)
+  // Appartenere al circuito FLE non basta: LEGA + FLE, SOLO FLE, MODIFICA SU FLE, RIPETI CONTROLLO e INVIA (Leghe
+  // Fantacalcio) richiedono la squadra FLE VERIFICATA per QUESTA lega FLE e QUESTO account: VERIFICA SQUADRA FLE (sola
+  // lettura) oppure un controllo FLE riuscito (gia nella 1.3.4: squadra letta su FLE = squadra attesa). Esiti "diversa" e
+  // "incerta" o nessuna verifica: SOLO LEGA, che resta sempre disponibile. Fantaclub: regole invariate (fleFantaclubAmmesso).
+  // Le funzioni di controllo e invio FLE sono IDENTICHE alla 1.3.4: i blocchi stanno solo nei punti d'ingresso.
+  // PROVA14: la verifica vale solo nell'epoca dell'account in cui e stata fatta (registrazioni precedenti senza epoca = epoca 0)
+  // 1.3.5-RC: la verifica vale solo per l'IDENTITÀ dell'account che l'ha fatta (impronta), oltre che per l'epoca; le verifiche delle
+  // versioni precedenti (senza identità) non valgono più: si rifà VERIFICA SQUADRA FLE (sola lettura). Nulla viene cancellato.
+  function associazioneLeghe() { var a = leggi("fle_associazione", null), id = identitaAttuale(); return a && a.lega && a.lega === leggi("lega_sorgente", "") && (Number(a.epoca) || 0) === epocaAccount() && id && a.imp === id ? a : null; }
+  function scriviAssociazione(rec) { rec.epoca = epocaAccount(); rec.imp = identitaAttuale(); scrivi("fle_associazione", rec); }
+  function attesoAssociazione(a) { return Number(a && (a.atteso || a.fleTid) || 0); }
+  function fleAutorizzatoLeghe(ignoraLavoro) {
+    var src = leggi("lega_sorgente", ""), nome = src ? nomeLega(src) : "la tua lega", lav = legaLavoro();
+    if (lav && !ignoraLavoro) return { ok: false, motivo: "lega_lavoro", testo: "Stai lavorando su " + nomeLega(lav) + " con SOLO LEGA: nessun invio a FLE. Per tornare alla tua lega FLE scegli LEGA + FLE nella pagina della formazione." };
+    if (!src) return { ok: false, motivo: "senza_lega", testo: "Entra prima nella tua lega (CAMBIA LEGA): poi premi VERIFICA SQUADRA FLE. SOLO LEGA resta disponibile." };
+    if (!identitaAttuale()) return { ok: false, motivo: "identita", testo: testoIdentita() }; // 1.3.5-RC: account non riconosciuto = prudenza
+    var a = associazioneLeghe(), u = leggi("ultima", null);
+    if (a && a.esito === "diversa") return { ok: false, motivo: "non_associato", testo: "Con questo account su FLE c'è una squadra diversa da quella di " + nome + (a.motivo ? " (" + a.motivo + ")" : "") + ": nessun invio a FLE. Entra in Leghe Fantacalcio con l'account che gestisce la squadra e ripeti VERIFICA SQUADRA FLE. SOLO LEGA resta disponibile." };
+    if (a && a.esito === "verificata" && Number(a.sorgente) && u && u.lega === src && Number(u.tid) && Number(u.tid) !== Number(a.sorgente))
+      return { ok: false, motivo: "altro_account", testo: "La verifica di " + nome + " riguarda un'altra squadra o un altro account: ripeti VERIFICA SQUADRA FLE (sola lettura, nessun invio). SOLO LEGA resta disponibile." };
+    if (!(a && a.esito === "verificata")) return { ok: false, motivo: a && a.esito === "incerta" ? "incerta" : "da_verificare",
+      testo: "Squadra FLE di questo account " + (a && a.esito === "incerta" ? "NON verificata (esito incerto" + (a.motivo ? ": " + a.motivo : "") + ")" : "non ancora verificata") + " per " + nome + ": premi VERIFICA SQUADRA FLE nella Home (sola lettura, nessuna formazione salvata o inviata). SOLO LEGA resta disponibile." };
+    return { ok: true };
+  }
+  // modalita con cui si apre la pagina formazione (FAI O MODIFICA, nuova sessione): LEGA + FLE solo con verifica riuscita
+  function modoInizialeLeghe() { return fleAutorizzatoLeghe().ok ? "lega_fle" : "solo_lega"; }
+  // percorso FLE richiesto da Leghe Fantacalcio e non autorizzato: avviso, diagnosi, la modalita torna quella consentita
+  function bloccoFleLeghe(azione) {
+    if (piattaformaScelta() === "fantaclub") return false;
+    var az = fleAutorizzatoLeghe(azione === "lega_fle" || azione === "solo_fle");
+    if (az.ok) return false;
+    log("FLE NON AUTORIZZATO", { azione: azione, motivo: az.motivo, lega: leggi("lega_sorgente", "") });
+    avviso(az.testo, true);
+    return true;
+  }
+  // teamLineupDto (squadra e competizione) da una risposta del sito: SOLO questi due numeri, nessun giocatore
+  function trovaDto(x, d) {
+    if (!x || typeof x !== "object" || d > 7) return null;
+    if (x.teamLineupDto && typeof x.teamLineupDto === "object") return x.teamLineupDto;
+    var vals = Array.isArray(x) ? x : Object.keys(x).map(function (k) { return x[k]; });
+    for (var i = 0; i < vals.length; i++) { var r = trovaDto(vals[i], d + 1); if (r) return r; }
+    return null;
+  }
+  function taskVerifica() { var t = sLeggi("task"); return t && t.tipo === "verifica" ? t : null; }
+  // 1.3.5-RC2: come Android, per la verifica basta la squadra (teamLineupDto.tid) anche senza la lista dei giocatori (competizione
+  // senza turno). Vale SOLO nella pagina formazione della competizione in prova e SOLO per una risposta di QUELLA competizione
+  // (idcomp, oppure, se manca, l'indirizzo della lettura formazione .../teamLineup/.../<competizione>). Squadre diverse = ambiguo.
+  function verificaFleDaRisposta(j, p, task) {
+    var dto = trovaDto(j, 0), comp = Number(task.comp || 0), m = location.pathname.match(/\/view\/competition\/(\d+)\/lineup/);
+    if (!dto || !comp || !m || Number(m[1]) !== comp) return;
+    var r = ctl.verificaFle || (ctl.verificaFle = { comp: comp, tids: [], risposte: 0, altre: 0, senzaGiocatori: false });
+    r.risposte++;
+    var tid = Number(dto.tid || 0), idc = Number(dto.idcomp || 0);
+    if (!tid) return;
+    var compR = idc || (/\/teamLineup\//i.test(String(p || "")) ? Number((String(p).match(/\/(\d+)$/) || [])[1] || 0) : 0);
+    if (compR !== comp) { r.altre++; return; }
+    if (r.tids.indexOf(tid) < 0) r.tids.push(tid);
+    if (!trovaPayload(j, 0)) r.senzaGiocatori = true;
+  }
   function taskAttivoFle() {
     var t = sLeggi("task");
-    return !!(t && (t.tipo === "check" || t.tipo === "invio" || t.tipo === "admin"));
+    return !!(t && (t.tipo === "check" || t.tipo === "invio" || t.tipo === "admin" || t.tipo === "verifica" || t.tipo === "riverifica" || t.tipo === "turno"));
   }
   function urlLegaSorgente() {
     var slug = legaCorrente();
@@ -2063,15 +2532,21 @@
     var f = leggi("fle", {}) || {};
     return f.comp ? fleLineupUrl(Number(f.comp)) : fleDiscoveryUrl();
   }
+  // 1.3.5 (collaudo XR): il ritorno del blocco SOSTITUISCE la pagina bloccata nella cronologia di Safari (location.replace):
+  // con il tasto Indietro non si rientra nella pagina bloccata, quindi nessun nuovo rimbalzo verso la lega FLE.
+  function vaiSostituendo(u) {
+    if (typeof location.replace === "function") location.replace(u); else location.assign(u);
+  }
   function applicaBloccoModo(perche) {
     if (suLogin()) return false;
+    if (taskVerifica()) return false; // 1.3.5: VERIFICA SQUADRA FLE in corso (lega e FLE, sola lettura)
     var modo = leggi("modo", "lega_fle");
     var slugPagina = slugDaPagina();
     var sorgente = legaCorrente();
     // Durante controllo/invio LEGA+FLE FVM deve poter lavorare dentro FLE.
     if (modo === "lega_fle" && taskAttivoFle()) return false;
     if (modo === "solo_fle") {
-      if (!suFle()) { log("BLOCCO MODO", { modo: modo, perche: perche || "pagina", da: location.pathname, a: "FLE" }); location.assign(urlFleFissa()); return true; }
+      if (!suFle()) { log("BLOCCO MODO", { modo: modo, perche: perche || "pagina", da: location.pathname, a: "FLE" }); vaiSostituendo(urlFleFissa()); return true; }
       return false;
     }
     // 1.1.0: SOLO LEGA naviga liberamente tra le leghe dell'account.
@@ -2080,9 +2555,125 @@
     if (modo === "lega_fle" && sorgente && slugPagina && slugPagina !== sorgente) {
       log("BLOCCO MODO", { modo: modo, perche: perche || "pagina", da: slugPagina, a: sorgente });
       sScrivi("avviso_blocco", "LEGA + FLE usa solo la tua lega FLE. Per un'altra lega scegli SOLO LEGA.");
-      location.assign(urlLegaSorgente()); return true;
+      vaiSostituendo(urlLegaSorgente()); return true;
     }
     return false;
+  }
+  // 1.3.5 (2° collaudo XR): CAMBIA LEGA della Home come l'app Android (chooseLeague): ELENCO DELLE LEGHE dentro FVM, nessuna
+  // pagina aperta e nessun ricaricamento. La lega scelta diventa subito quella di PASSO 1. Causa del difetto del 2° collaudo:
+  // dopo l'avviso vaiLega("") apriva la radice del sito, che riporta all'ultima lega usata, e controllaPagina ne apriva subito
+  // la formazione (vai_lega senza lega = qualsiasi lega): si tornava alla lega FLE o alla schermata generale del sito.
+  //  - lega diversa dalla lega FLE: SOLO LEGA + lega di lavoro (cambiaLegaLavoro): nessun invio FLE possibile da quella lega;
+  //  - lega FLE: lega di lavoro azzerata; LEGA + FLE solo con la squadra FLE verificata e mai su una pagina di un'altra lega
+  //    (il blocco di sicurezza la riaprirebbe): in quel caso si attiva con PASSO 1 (vaiAllaFormazione), come sempre;
+  //  - lega FLE non ancora nota: si apre la lega scelta (il sito controlla che sia dell'account) e poi torna la Home.
+  // La lega FLE, la verifica della squadra e le protezioni FLE NON cambiano. Fantaclub: comportamento invariato.
+  function legheElenco() {
+    var out = [], visti = {};
+    var metti = function (s, tipo) { if (!s || s === FLE_SLUG || visti[s]) return; visti[s] = 1; out.push({ slug: s, tipo: tipo }); };
+    metti(leggi("lega_sorgente", ""), "fle");
+    // PROVA14: «aperte» = SOLO quelle aperte dall'utente con l'account attuale (mai le pagine aperte da FVM, mai altri account)
+    legheAperte().forEach(function (x) { metti(x.s, "nota"); });
+    LEGHE_FONTE.forEach(function (l) { metti(l[1], "circuito"); });
+    // vecchie registrazioni (tutte le epoche) fuori dal circuito: restano visibili, ma come NON confermate per questo account
+    (leggi("leghe_note", []) || []).forEach(function (s) { metti(s, "passato"); });
+    return out;
+  }
+  function nomeLegaElenco(s) {
+    var l = LEGHE_FONTE.filter(function (x) { return x[1] === s; })[0];
+    return l ? l[0] : leggi("nome_lega_" + s, "") || nomeLega(s);
+  }
+  function cambiaLegaHome() {
+    var modo = leggi("modo", "lega_fle");
+    // PROVA15: con Fantaclub, CAMBIA LEGA non apre piu la pagina iniziale di Leghe Fantacalcio: spiega e porta alla Consegna Fantaclub
+    if (piattaformaScelta() === "fantaclub") { cambiaLegaFcHome(); return; }
+    monta();
+    if (!radice) return;
+    var src = leggi("lega_sorgente", ""), inUso = legaLavoro() || src, az = fleAutorizzatoLeghe(true), elenco = legheElenco();
+    log("CAMBIA LEGA", { esito: "elenco", modo: modo, leghe: elenco.length, inUso: inUso || "" });
+    var box = document.createElement("div");
+    box.className = "ov";
+    var h = "<div class='cd'><div class='lb'>FANTA VICE MISTER</div><div class='t1' style='margin-top:6px'>Scegli la lega</div>" +
+      "<div class='mu' style='margin-top:6px'>" + (src ? "La lega scelta diventa quella di PASSO 1. Solo " + esc(nomeLegaElenco(src)) + " può usare LEGA + FLE" +
+        (az.ok ? "" : " (dopo VERIFICA SQUADRA FLE)") + ": le altre leghe lavorano in SOLO LEGA, senza nessun invio a FLE." : "Scegli la lega del tuo account: la apro e la riconosco.") + "</div></div>";
+    var gruppo = "";
+    elenco.forEach(function (l) {
+      var tit = l.tipo === "fle" ? "LA TUA LEGA FLE" : l.tipo === "nota" ? "LEGHE APERTE CON QUESTO ACCOUNT" : l.tipo === "passato" ? "VISTE IN PASSATO SU QUESTO IPHONE (NON CONFERMATE)" : "ALTRE LEGHE DEL CIRCUITO FLE";
+      if (tit !== gruppo) { gruppo = tit; h += "<div class='lb' style='margin:12px 2px 0'>" + tit + "</div>"; }
+      var meta = l.tipo === "fle" ? (az.ok ? "LEGA + FLE · squadra FLE verificata" : "SOLO LEGA finché non verifichi la squadra FLE")
+        : !src ? (l.tipo === "nota" ? "aperta con questo account" : "si apre solo se è nel tuo account")
+        : "SOLO LEGA · nessun invio a FLE" + (l.tipo !== "nota" ? " · si apre solo se è nel tuo account" : "");
+      h += "<button class='bt" + (l.slug === inUso ? " oro" : "") + "' data-s='" + esc(l.slug) + "'>" + esc(nomeLegaElenco(l.slug)) + (l.slug === inUso ? " ✓" : "") +
+        "<div style='font-size:12px;font-weight:600;opacity:.85;margin-top:3px'>" + (l.slug === inUso ? "IN USO · " : "") + esc(meta) + "</div></button>";
+    });
+    h += "<div class='mu' style='margin:10px 2px 0'>Un'altra lega del tuo account? Aprila dal selettore del sito: con SOLO LEGA FVM la riconosce da sola.</div>" +
+      "<button class='bt' data-s=''>ANNULLA</button>";
+    box.innerHTML = h;
+    radice.appendChild(box);
+    Array.prototype.forEach.call(box.querySelectorAll("[data-s]"), function (b) {
+      b.addEventListener("click", function (ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        box.remove();
+        var s = b.getAttribute("data-s");
+        if (!s) { log("CAMBIA LEGA", { esito: "annullato", modo: modo }); return; }
+        scegliLegaElenco(s);
+      });
+    });
+  }
+  // PROVA15: CAMBIA LEGA con Fantaclub. Per sicurezza una lega Fantaclub vale SOLO dopo l'apertura della sua pagina «Consegna» (lega
+  // verificata dal sito): qui lo si spiega e si porta direttamente li. Credenziali, sessione dei siti e storico NON vengono toccati.
+  function cambiaLegaFcHome() {
+    monta();
+    if (!radice) return;
+    var lg = legaFc(), stato = lg ? (inCircuitoFc(lg.nl) ? "nel circuito FLE" : "fuori dal circuito FLE: consegna solo in lega (SOLO LEGA)") : "";
+    log("CAMBIA LEGA", { piattaforma: "fantaclub", lega: lg ? lg.nl : "nessuna", esito: "spiegazione" });
+    var box = document.createElement("div");
+    box.className = "ov";
+    box.innerHTML = "<div class='cd'><div class='lb'>FANTA VICE MISTER · FANTACLUB</div><div class='t1' style='margin-top:6px'>Cambia lega Fantaclub</div>" +
+      "<div class='mu' style='margin-top:6px'>" + (lg ? "Lega in uso: <b>" + esc(lg.nome) + "</b> (" + esc(stato) + ")." : "Nessuna lega Fantaclub riconosciuta.") + "</div>" +
+      "<div class='mu' style='margin-top:6px'>Per sicurezza FVM riconosce una lega Fantaclub solo quando apri la sua pagina <b>Consegna</b>: per un'altra lega tocca SCEGLI UN'ALTRA LEGA, scegli la lega sul sito e apri «Consegna». Username, password, sessione e storico non vengono toccati.</div></div>" +
+      (lg ? "<button class='bt oro' data-c='consegna'>APRI LA CONSEGNA DI " + esc(lg.nome) + "</button>" : "") +
+      "<button class='bt" + (lg ? "" : " oro") + "' data-c='altra'>SCEGLI UN'ALTRA LEGA FANTACLUB</button><button class='bt' data-c=''>ANNULLA</button>";
+    radice.appendChild(box);
+    Array.prototype.forEach.call(box.querySelectorAll("[data-c]"), function (b) {
+      b.addEventListener("click", function (ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        var c = b.getAttribute("data-c");
+        box.remove();
+        if (!c) { log("CAMBIA LEGA", { piattaforma: "fantaclub", esito: "annullato" }); return; }
+        if (c === "altra" && lg) { cambiaLegaFc(); if (legaFc()) { aggiornaPannello(); return; } } // conferma rifiutata: nulla cambia
+        log("CAMBIA LEGA", { piattaforma: "fantaclub", esito: c === "altra" ? "altra lega: apro Fantaclub" : "apro la Consegna", lega: (legaFc() || {}).nl || "da scegliere" });
+        chiudiPannello();
+        consegnaFantaclub();
+      });
+    });
+  }
+  // CAMBIA LEGA senza lega FLE nota: arrivati nella lega scelta torna la Home di FVM (una volta, entro 60 s)
+  function homeDopoLega() {
+    var hd = sLeggi("home_dopo_lega"), s = slugDaPagina();
+    if (!hd) return;
+    if (Date.now() - Number(hd.at || 0) > 60000) { sScrivi("home_dopo_lega", null); return; }
+    if (s && s === hd.slug) { sScrivi("home_dopo_lega", null); log("CAMBIA LEGA", { esito: "lega aperta", lega: s, legaFle: leggi("lega_sorgente", "") || "" }); apriPannello(); }
+  }
+  function scegliLegaElenco(slug) {
+    var src = leggi("lega_sorgente", ""), modo = leggi("modo", "lega_fle"), prima = legaLavoro() || src;
+    if (!src) {
+      log("CAMBIA LEGA", { esito: "scelta", lega: slug, perche: "lega FLE non ancora nota: apro la lega" });
+      sScrivi("home_dopo_lega", { slug: slug, at: Date.now() });
+      chiudiPannello(); location.assign("https://leghe.fantacalcio.it/" + slug);
+      return;
+    }
+    var nuovo = modo;
+    if (slug !== src) nuovo = "solo_lega";
+    else if (modo === "solo_lega" && fleAutorizzatoLeghe(true).ok) {
+      var qui = slugDaPagina();
+      if (!qui || qui === src) nuovo = "lega_fle"; // altrimenti LEGA + FLE si attiva con PASSO 1 (nessun ritorno forzato da qui)
+    } else if (modo !== "solo_lega" && !fleAutorizzatoLeghe(true).ok) nuovo = "solo_lega";
+    if (nuovo !== modo) { scrivi("modo", nuovo); log("MODO", { da: modo, a: nuovo, perche: "CAMBIA LEGA" }); }
+    cambiaLegaLavoro(slug === src ? "" : slug, "CAMBIA LEGA: scelta dall'elenco");
+    log("CAMBIA LEGA", { esito: "scelta", da: prima, a: slug, modo: nuovo, fle: slug === src ? "lega FLE" : "no (SOLO LEGA)" });
+    aggiornaPannello();
+    avviso("PASSO 1: " + nomeLegaElenco(slug) + (slug === src ? (nuovo === "lega_fle" ? " · LEGA + FLE" : " · LEGA + FLE si attiva con PASSO 1 se la squadra FLE è verificata") : " · SOLO LEGA, nessun invio a FLE"));
   }
   // 1.1.0: apertura della formazione di una lega qualsiasi (SOLO LEGA).
   // Se la competizione non e ancora nota, controllaPagina apre la formazione appena la scopre.
@@ -2315,9 +2906,15 @@
   function eApi(u) { return String(u || "").indexOf("apileague.fantacalcio.it") >= 0; }
   function tieniIntestazioni(u, h) {
     if (!eApi(u) || !h || !Object.keys(h).length) return;
+    var metodo = arguments[2]; // PROVA11: metodo della richiesta del sito (terzo argomento facoltativo; inizio della funzione invariato)
     var s = String(u);
     var punti = (s.indexOf("/league/competition") >= 0 || s.indexOf("/league/status") >= 0 || s.indexOf("/gaming/") >= 0) ? 3 : s.indexOf("/league/") >= 0 ? 2 : 1;
     if (!ctl.hdr || punti >= ctl.hdrScore) { ctl.hdr = h; ctl.hdrScore = punti; ctl.hdrFrom = s.split("?")[0].replace(API, ""); }
+    // PROVA11: intestazioni per le LETTURE di FVM prese solo dalle letture del sito (GET/HEAD), mai dal salvataggio (PUT/POST)
+    var m = String(metodo || "").toUpperCase();
+    if ((m === "GET" || m === "HEAD") && (!ctl.hdrLettura || punti >= (ctl.hdrLetturaScore || 0))) { ctl.hdrLettura = h; ctl.hdrLetturaScore = punti; ctl.hdrLetturaFrom = m + " " + s.split("?")[0].replace(API, ""); }
+    // 1.3.5-RC: senza identita valida in questa scheda, dopo le prime letture del sito (la risposta del sito al profilo ha la precedenza)
+    if ((m === "GET" || m === "HEAD") && !identitaAttuale() && !ctl.identitaChiesta && !ctl.identitaProgrammata) { ctl.identitaProgrammata = true; setTimeout(function () { verificaIdentita("letture del sito"); }, 2500); }
   }
   function trovaPayload(x, d) {
     if (!x || typeof x !== "object" || d > 7) return null;
@@ -2340,9 +2937,26 @@
         var pl = trovaPayload(j, 0);
         if (pl) {
           var dto = pl.teamLineupDto || {};
-          ctl.payload = { comp: Number(dto.idcomp || 0), tid: Number(dto.tid || 0), mday: dto.mday, cmday: dto.cmday, ids: (pl.lineUpInfo || []).map(function (x) { return Number(x && x.pid); }).filter(Boolean) };
+          ctl.payload = { comp: Number(dto.idcomp || 0), tid: Number(dto.tid || 0), mday: dto.mday, cmday: dto.cmday, ids: (pl.lineUpInfo || []).map(function (x) { return Number(x && x.pid); }).filter(Boolean),
+            sw: fvmSwLeggi(dto, "fle") }; // PROVA8: Switch della formazione FLE della pagina (stessa risposta, nessuna richiesta in piu)
+          ctl.payloadDto = dto; // PROVA11: formazione ufficiale letta DAL SITO (usata da RIPROVA VERIFICA, nessuna richiesta in piu)
           var fNota = leggi("fle", {}) || {};
           if (!Number(fNota.comp || 0) && ctl.payload.comp) { fNota.comp = ctl.payload.comp; scrivi("fle", fNota); log("COMPETIZIONE FLE", { comp: ctl.payload.comp, da: "campo FLE" }); }
+          try { guardiaCampoFle(); } catch (e) {} // 1.3.5: SOLO FLE / MODIFICA SU FLE con squadra diversa = pagina chiusa
+          try { guardiaCampoFleFc(); } catch (e) {} // PROVA12: da Fantaclub = salvataggio bloccato, pagina aperta
+        }
+      }
+      // 1.3.5-RC2 VERIFICA SQUADRA FLE, fase FLE: squadra dell'account nella pagina formazione FLE (solo tid e competizione)
+      if (suFle() && testo.indexOf("teamLineupDto") >= 0) {
+        var tF = taskVerifica();
+        if (tF && tF.fase === "lineup") verificaFleDaRisposta(j, p, tF);
+      }
+      // 1.3.5 VERIFICA SQUADRA FLE, fase lega: squadra dell'account nella pagina formazione della lega (solo tid e competizione)
+      if (!suFle() && testo.indexOf("teamLineupDto") >= 0) {
+        var tV = taskVerifica();
+        if (tV && tV.fase === "lega") {
+          var dV = trovaDto(j, 0), mP = location.pathname.match(/\/view\/competition\/(\d+)\/lineup/), compP = mP ? Number(mP[1]) : 0;
+          if (dV && Number(dV.tid) && (!compP || !Number(dV.idcomp) || Number(dV.idcomp) === compP)) ctl.payloadLega = { tid: Number(dV.tid), comp: Number(dV.idcomp || 0) };
         }
       }
     } catch (e) {}
@@ -2353,6 +2967,8 @@
     function pl(pid, i, k) { var x = (u.nomi && u.nomi[pid]) || {}; return { pid: pid, flePid: pid, name: x.n || String(pid), role: Number(x.r || 0), key: k + ":" + pid }; }
     return { module: u.modulo, starts: u.titolari.map(function (p, i) { return pl(p, i, "s"); }), bench: u.panchina.map(function (p, i) { return pl(p, i, "b"); }) };
   }
+  // PROVA12: moduli ammessi dal regolamento FLE 2026-27 (3-4-3, 4-3-3, 4-4-2, 3-5-2, 5-3-2, 4-5-1, 5-4-1)
+  function moduliFle() { return ["343", "433", "442", "352", "532", "451", "541"]; }
   function costruisciFle(source, fle, choices) {
     choices = choices || {};
     var byPid = {};
@@ -2370,27 +2986,32 @@
       var chosen = Number(choices[sp.key] || 0);
       var item = { key: sp.key, kind: "start", index: i, role: role, source: sp, chosen: 0, required: true };
       if (chosen && valid(chosen, role, used)) { starts[i] = asFle(chosen, { sub: true, from: sp.name }); used[chosen] = true; item.chosen = chosen; }
+      else if (chosen) item.scartata = chosen; // PROVA12: scelta (anche ricordata) non piu valida sui 25 FLE attuali: si sceglie di nuovo
       items.push(item);
     });
     var startIds = {};
     starts.forEach(function (p) { if (p) startIds[p.pid] = true; });
     var got = { 1: [], 2: [], 3: [], 4: [] };
+    // PROVA12: panchinari della lega che NON entrano nella panchina FLE, con il motivo (solo informazione: l'adattamento e quello di sempre)
+    var esclusi = [];
     source.bench.forEach(function (sp, i) {
       var mapped = byPid[sp.flePid];
       if (mapped) {
-        if (used[mapped.pid]) return;
+        if (used[mapped.pid]) { esclusi.push({ name: sp.name, role: Number(mapped.role || 0), ord: i, motivo: "già in formazione" }); return; }
         var r = Number(mapped.role);
         if (NEED[r] && got[r].length < NEED[r]) { got[r].push(asFle(mapped.pid, { from: sp.name, ord: i })); used[mapped.pid] = true; }
+        else esclusi.push({ name: sp.name, role: r, ord: i, motivo: NEED[r] ? "ruolo già completo" : "ruolo non riconosciuto" });
         return;
       }
       var r2 = Number(sp.role || 0);
-      if (r2 && got[r2].length >= NEED[r2]) return;
+      if (r2 && got[r2].length >= NEED[r2]) { esclusi.push({ name: sp.name, role: r2, ord: i, motivo: "non nei tuoi 25 FLE, ruolo già completo" }); return; }
       var chosen = Number(choices[sp.key] || 0);
       var item = { key: sp.key, kind: "bench", index: i, role: r2, source: sp, chosen: 0, required: false };
       if (chosen && valid(chosen, r2, used)) {
         var rr = Number(byPid[chosen].role);
         if (got[rr].length < NEED[rr]) { got[rr].push(asFle(chosen, { sub: true, from: sp.name, ord: i })); used[chosen] = true; item.chosen = chosen; }
-      }
+        else item.scartata = chosen;
+      } else if (chosen) item.scartata = chosen;
       items.push(item);
     });
     [1, 2, 3, 4].forEach(function (r) {
@@ -2405,6 +3026,7 @@
         var chosen = Number(choices[key] || 0);
         var item = { key: key, kind: "add", index: k, role: r, source: null, chosen: 0, required: true };
         if (chosen && valid(chosen, r, used)) { got[r].push(asFle(chosen, { sub: true, ord: 1000 + r * 10 + k })); used[chosen] = true; item.chosen = chosen; }
+        else if (chosen) item.scartata = chosen;
         items.push(item);
       }
     });
@@ -2430,8 +3052,13 @@
       var want = { 1: 1, 2: Number(mod[0]), 3: Number(mod[1]), 4: Number(mod[2]) };
       if ([1, 2, 3, 4].some(function (r) { return c[r] !== want[r]; })) moduleProblem = "Ruoli dei titolari " + c[1] + "P " + c[2] + "D " + c[3] + "C " + c[4] + "A: non corrispondono al modulo " + mod.split("").join("-") + ".";
     }
+    // PROVA12: FLE ammette solo i 7 moduli del regolamento (come Android ALLOWED_MODULES): fuori elenco = nessun invio
+    if (!moduleProblem && moduliFle().indexOf(mod) < 0) moduleProblem = mod.length === 3
+      ? "Modulo " + mod.split("").join("-") + " non ammesso su FLE (ammessi: " + moduliFle().map(function (m) { return m.split("").join("-"); }).join(", ") + "): nessun invio a FLE. Cambia modulo nella tua lega e salva di nuovo."
+      : "Modulo della formazione non riconosciuto: FLE ammette solo " + moduliFle().map(function (m) { return m.split("").join("-"); }).join(", ") + ". Nessun invio a FLE.";
+    esclusi.sort(function (a, b) { return a.ord - b.ord; });
     return {
-      module: source.module, starts: finalStarts, bench: bench, items: items, pending: pending, missing: missing, moduleProblem: moduleProblem,
+      module: source.module, starts: finalStarts, bench: bench, items: items, pending: pending, missing: missing, moduleProblem: moduleProblem, esclusi: esclusi,
       complete: finalStarts.length === 11 && bench.length === 11 && !pending.length && !missing.length && !moduleProblem
     };
   }
@@ -2460,7 +3087,31 @@
     if (!u || !u.titolari || !f || !f.roster) return null;
     // 1.1.0 Fantaclub: la rosa FLE deve venire da un controllo fatto per la formazione Fantaclub
     if (u.fonte === "fantaclub" && f.fonte !== "fantaclub") return null;
-    return costruisciFle(u.fonte === "fantaclub" ? sorgenteFc(u, f.roster) : sorgente(u), f.roster, Object.assign({}, sceltePerTid(f.tid), f.choices || {}));
+    // PROVA12: una scelta presa dalla memoria (non fatta in questo controllo) e indicata come RICORDATA, con scadenza, e si puo annullare
+    var mem = scelteRicordateInfo(f.tid), oggi = f.choices || {};
+    var res = costruisciFle(u.fonte === "fantaclub" ? sorgenteFc(u, f.roster) : sorgente(u), f.roster, Object.assign({}, sceltePerTid(f.tid), oggi));
+    res.items.forEach(function (it) {
+      var m = mem[it.key];
+      if (!m || Object.prototype.hasOwnProperty.call(oggi, it.key)) return;
+      if (it.chosen && Number(it.chosen) === Number(m.pid)) { it.ricordata = true; it.ricordataFino = m.until; }
+      if (it.scartata && Number(it.scartata) === Number(m.pid)) { it.scartataRicordata = true; it.ricordataFino = m.until; }
+    });
+    return res;
+  }
+  // PROVA12: scelte ricordate ancora valide (non scadute) di una squadra FLE, con la data di scadenza
+  function scelteRicordateInfo(fleTid) {
+    var mie = (leggi("scelte", {}) || {})[fleTid] || {}, ora2 = Date.now(), out = {};
+    Object.keys(mie).forEach(function (k) { if (mie[k] && mie[k].pid && new Date(mie[k].until || 0).getTime() > ora2) out[k] = { pid: Number(mie[k].pid), until: mie[k].until }; });
+    return out;
+  }
+  // PROVA12: DIMENTICA LE SCELTE RICORDATE della squadra FLE (solo memoria di FVM: nessun salvataggio, nessun invio)
+  function dimenticaScelteRicordate(fleTid) {
+    var tutte = leggi("scelte", {}) || {}, n = Object.keys(tutte[fleTid] || {}).length;
+    delete tutte[fleTid];
+    scrivi("scelte", tutte);
+    // le scelte fatte in QUESTO controllo restano (sono visibili come «scelto ✓»); tornano da scegliere solo quelle ricordate
+    log("SCELTE RICORDATE", { azione: "dimenticate", squadra: Number(fleTid) || 0, quante: n });
+    return n;
   }
   // 1.1.0 Fantaclub: formazione sorgente della piattaforma scelta. Leghe: "ultima" com'e sempre stata.
   // Fantaclub: la formazione consegnata, con titolari/panchina come elenchi di nomi.
@@ -2550,6 +3201,514 @@
     return { module: mod, starts: sp.filter(function (x, i) { return gioc[i].start; }), bench: sp.filter(function (x, i) { return !gioc[i].start; }), collegati: abb.filter(function (r) { return r.flePid; }).length, totale: gioc.length };
   }
 
+  // ---------------------------------------------------------------- 1.3.5-PROVA8 · SWITCH di Leghe Fantacalcio
+  // Dati reali (log Android 30/09 e 01/10, ricognizione Leghe 9/10): il corpo del salvataggio e il teamLineupDto hanno
+  // swtcA e swtcB (pid dei due giocatori), swtc, swtcMdl e pos. PRESENTE = swtcA e swtcB diversi da 0; ASSENTE = entrambi 0.
+  // swtc e pos: significato NON noto, mai dedotto. I 5 campi si leggono e si scrivono SEMPRE insieme e da UNA sola fonte.
+  // Rispetto alla giornata di destinazione (giornata di Serie A: cmday, riferimento FLE league/status.mday) uno Switch puo
+  // essere anche PRECEDENTE (giornata piu vecchia o formazione "Recuperata dal Server", act 4) o INCOMPATIBILE (giocatori
+  // non presenti nella formazione FLE). Stato SCONOSCIUTO = nessuna scrittura automatica: l'invio si ferma e lo spiega.
+  function fvmSwCampi() { return ["swtcA", "swtcB", "swtc", "swtcMdl", "pos"]; }
+  function fvmSwNum(v) { var n = Number(v); return isFinite(n) && n > 0 ? Math.floor(n) : 0; }
+  function fvmSwModulo(m) { return String(m == null ? "" : m).replace(/\D/g, ""); }
+  // oggetto formazione (corpo del salvataggio o teamLineupDto) -> Switch letto + formazione a cui appartiene
+  function fvmSwLeggi(o, fonte) {
+    if (!o || typeof o !== "object") return { stato: "sconosciuto", motivo: "dati della formazione assenti", fonte: String(fonte || ""), valori: {} };
+    var s = { fonte: String(fonte || ""), tid: fvmSwNum(o.tid), comp: fvmSwNum(o.idcomp != null ? o.idcomp : o.comp), mday: fvmSwNum(o.mday), cmday: fvmSwNum(o.cmday),
+      act: o.act == null || o.act === "" ? null : Number(o.act), ldate: String(o.ldate || "").slice(0, 20), valori: {}, a: 0, b: 0 };
+    fvmSwCampi().forEach(function (k) { if (Object.prototype.hasOwnProperty.call(o, k)) s.valori[k] = o[k]; });
+    if (!("swtcA" in s.valori) || !("swtcB" in s.valori)) { s.stato = "sconosciuto"; s.motivo = "campi Switch assenti nei dati"; return s; }
+    var a = Number(o.swtcA == null ? 0 : o.swtcA), b = Number(o.swtcB == null ? 0 : o.swtcB);
+    if (!isFinite(a) || !isFinite(b) || a < 0 || b < 0) { s.stato = "sconosciuto"; s.motivo = "valori Switch non riconosciuti"; return s; }
+    s.a = fvmSwNum(a); s.b = fvmSwNum(b);
+    if (!s.a && !s.b) { s.stato = "assente"; return s; }
+    if (!s.a || !s.b) { s.stato = "sconosciuto"; s.motivo = "Switch incompleto (un solo giocatore)"; return s; }
+    if (s.a === s.b) { s.stato = "sconosciuto"; s.motivo = "Switch con lo stesso giocatore due volte"; return s; }
+    // presente: servono tutti e 5 i campi (come nei salvataggi reali con Switch), altrimenti si mescolerebbero fonti diverse
+    if (fvmSwCampi().some(function (k) { return !(k in s.valori); })) { s.stato = "sconosciuto"; s.motivo = "Switch con campi incompleti"; return s; }
+    s.stato = "presente";
+    return s;
+  }
+  // testo (o oggetto) di una risposta o di un corpo di salvataggio -> Switch letto
+  function fvmSwDaTesto(t, fonte) {
+    var j = t;
+    if (typeof t === "string") { try { j = JSON.parse(t); } catch (e) { return fvmSwLeggi(null, fonte); } }
+    var dto = j && typeof j === "object" && j.teamLineupDto && typeof j.teamLineupDto === "object" ? j.teamLineupDto : trovaFormazione(j, 0);
+    return fvmSwLeggi(dto, fonte);
+  }
+  function fvmSwImpronta(s) { return !s ? "?" : s.stato === "presente" ? "P" + s.a + "-" + s.b + "-" + fvmSwModulo(s.valori.swtcMdl) : s.stato === "assente" ? "A" : "?"; }
+  function fvmSwStesso(x, y) { return !!(x && y && x.stato === "presente" && y.stato === "presente" && x.a === y.a && x.b === y.b && fvmSwModulo(x.valori.swtcMdl) === fvmSwModulo(y.valori.swtcMdl)); }
+  function fvmSwMancanti(s, starts, bench) {
+    if (!s || s.stato !== "presente") return [];
+    var ids = (starts || []).concat(bench || []).map(Number);
+    return [s.a, s.b].filter(function (p) { return ids.indexOf(p) < 0; });
+  }
+  function fvmSwCompatibile(s, starts, bench) { return !!(s && s.stato === "presente" && !fvmSwMancanti(s, starts, bench).length); }
+  // Switch su FLE rispetto alla destinazione: presente (giornata corrente) / assente / precedente / sconosciuto
+  function fvmSwStatoFle(fle, dest, target) {
+    dest = dest || {};
+    if (!fle || fle.stato === "sconosciuto") return "sconosciuto";
+    if (!fle.tid || fle.tid !== fvmSwNum(dest.tid) || !fle.comp || fle.comp !== fvmSwNum(dest.comp)) return "sconosciuto";
+    if (fle.stato === "assente") return "assente";
+    if (fle.act === 4) return "precedente";
+    target = fvmSwNum(target);
+    if (!target || !fle.cmday) return "sconosciuto";
+    if (fle.cmday < target) return "precedente";
+    if (fle.cmday > target) return "sconosciuto";
+    return "presente";
+  }
+  // Switch della lega di origine (gia legato alla SUA formazione): presente / assente / precedente / sconosciuto / non_applicabile
+  function fvmSwStatoLega(lega, fonte, target) {
+    if (fonte === "fantaclub") return "non_applicabile";
+    if (!lega || lega.stato === "sconosciuto") return "sconosciuto";
+    target = fvmSwNum(target);
+    if (lega.act === 4) return "precedente";
+    if (target && lega.cmday && lega.cmday < target) return "precedente";
+    if (target && lega.cmday && lega.cmday > target) return "sconosciuto";
+    return lega.stato;
+  }
+  // DECISIONE (pura). o = { fonte: "leghe"|"fantaclub", lega, fle, target, dest: {tid, comp, starts, bench, mdl}, scelta: {azione, situazione} }
+  // scrittura: "lega" (copia dalla lega) | "fle" (mantiene quello letto su FLE) | "assente" (nessuno Switch) | "nessuna".
+  // obbligatoria = serve una scelta dell'utente PRIMA dell'invio; blocca = l'invio automatico non deve partire.
+  function fvmSwDecidi(o) {
+    o = o || {};
+    var dest = o.dest || {}, target = fvmSwNum(o.target), L = fvmSwStatoLega(o.lega, o.fonte, target), F = fvmSwStatoFle(o.fle, dest, target);
+    var lc = L === "presente" && fvmSwCompatibile(o.lega, dest.starts, dest.bench), fc = F === "presente" && fvmSwCompatibile(o.fle, dest.starts, dest.bench);
+    var d = { lega: L, fle: F, legaCompat: lc, fleCompat: fc, caso: "", opzioni: [], evidenzia: "", predefinita: "", obbligatoria: false, blocca: false, motivo: "",
+      scelta: null, azione: "", scrittura: "nessuna", posSoloSePresente: false, flePrecedentePresente: !!(F === "precedente" && o.fle && o.fle.stato === "presente"),
+      mancantiLega: L === "presente" ? fvmSwMancanti(o.lega, dest.starts, dest.bench) : [], mancantiFle: F === "presente" ? fvmSwMancanti(o.fle, dest.starts, dest.bench) : [] };
+    d.situazione = [target, fvmSwNum(dest.tid), fvmSwNum(dest.comp), L + ":" + fvmSwImpronta(o.lega) + (lc ? "+" : "-"), F + ":" + fvmSwImpronta(o.fle) + (fc ? "+" : "-")].join("|");
+    if (F === "sconosciuto") { d.caso = "fle_non_verificabile"; d.blocca = true; d.motivo = "fle_non_verificabile"; return d; }
+    if (F === "assente" || F === "precedente") {
+      // su FLE nessuno Switch per QUESTA giornata: si riporta quello della lega se compatibile, altrimenti nessuno
+      // (uno Switch di una giornata precedente non viene MAI trasferito alla nuova giornata)
+      if (lc) { d.caso = "copia"; d.scrittura = "lega"; }
+      else { d.caso = L === "presente" ? "lega_incompatibile" : L === "sconosciuto" ? "lega_non_letta" : L === "precedente" ? "lega_precedente" : "nessuno"; d.scrittura = "assente"; d.posSoloSePresente = true; }
+      return d;
+    }
+    // su FLE c'e uno Switch della giornata corrente
+    if (lc && fvmSwStesso(o.lega, o.fle)) { d.caso = "uguale"; d.scrittura = "lega"; return d; }
+    if (lc) { d.caso = "conflitto"; d.opzioni = fc ? ["lega", "modifica", "mantieni"] : ["lega", "modifica", "elimina"]; d.evidenzia = "lega"; d.obbligatoria = true; }
+    else if (fc) { d.caso = "fle_presente"; d.opzioni = ["modifica", "mantieni", "elimina"]; d.evidenzia = "modifica"; d.predefinita = "mantieni"; }
+    else { d.caso = "fle_incompatibile"; d.opzioni = ["modifica", "elimina"]; d.evidenzia = "modifica"; d.obbligatoria = true; }
+    // la scelta vale solo per la STESSA situazione (giornata, squadra, competizione, Switch della lega e di FLE, compatibilita)
+    var s = o.scelta && o.scelta.situazione === d.situazione && d.opzioni.indexOf(o.scelta.azione) >= 0 ? o.scelta.azione : "";
+    d.scelta = s || null;
+    var az = s || (d.obbligatoria ? "" : d.predefinita);
+    if (!az) { d.blocca = true; d.motivo = "scelta_mancante"; return d; }
+    d.azione = az;
+    d.scrittura = az === "lega" ? "lega" : az === "mantieni" ? "fle" : az === "elimina" ? "assente" : (fc ? "fle" : "assente");
+    if (d.scrittura === "assente") d.posSoloSePresente = true;
+    return d;
+  }
+  // valori da scrivere (tutti da UNA sola fonte). "assente" = come i salvataggi reali senza Switch: 0, 0, 0, modulo; pos 0
+  // solo se il corpo lo contiene gia (i salvataggi reali senza Switch non hanno pos).
+  function fvmSwValori(d, o) {
+    o = o || {};
+    var copia = function (s) { var v = {}; fvmSwCampi().forEach(function (k) { if (s && s.valori && k in s.valori) v[k] = s.valori[k]; }); return v; };
+    if (!d) return null;
+    if (d.scrittura === "lega") return copia(o.lega);
+    if (d.scrittura === "fle") return copia(o.fle);
+    if (d.scrittura === "assente") return { swtcA: 0, swtcB: 0, swtc: 0, swtcMdl: String(o.mdl == null ? "" : o.mdl), pos: 0 };
+    return null;
+  }
+  // scrive i valori nel corpo del salvataggio FLE (stesso tipo dei campi gia presenti); ritorna i campi scritti
+  function fvmSwScrivi(o, v, posSoloSePresente) {
+    if (!o || !v) return [];
+    var scritti = [];
+    fvmSwCampi().forEach(function (k) {
+      if (!(k in v)) return;
+      if (k === "pos" && posSoloSePresente && !(k in o)) return;
+      var x = v[k];
+      if (k in o && o[k] !== null && x !== null && x !== undefined) {
+        if (typeof o[k] === "number") x = isFinite(Number(x)) ? Number(x) : 0;
+        else if (typeof o[k] === "string") x = String(x);
+      }
+      o[k] = x; scritti.push(k);
+    });
+    return scritti;
+  }
+  // verifica dopo il salvataggio: giocatori (significato noto) e swtcMdl rigorosi; pos "da verificare"; swtc solo registrato
+  function fvmSwVerifica(atteso, letto) {
+    if (!atteso) return { esito: "nessuna_attesa" };
+    if (!letto || letto.stato === "sconosciuto") return { esito: "non_letto", motivo: (letto && letto.motivo) || "lettura non riuscita" };
+    var aA = fvmSwNum(atteso.swtcA), aB = fvmSwNum(atteso.swtcB), presente = !!(aA && aB), v = letto.valori || {};
+    var r = { esito: "ok", atteso: presente ? aA + "-" + aB : "nessuno", letto: letto.stato === "presente" ? letto.a + "-" + letto.b : "nessuno", differenze: [], daVerificare: [],
+      swtc: { atteso: atteso.swtc === undefined ? null : atteso.swtc, letto: v.swtc === undefined ? null : v.swtc } };
+    if ((letto.a || 0) !== aA || (letto.b || 0) !== aB) r.differenze.push("giocatori");
+    if (presente && fvmSwModulo(atteso.swtcMdl) !== fvmSwModulo(v.swtcMdl)) r.differenze.push("swtcMdl");
+    if (presente && "pos" in atteso && Number(atteso.pos) !== Number(v.pos)) r.daVerificare.push("pos");
+    if (r.differenze.length) r.esito = "diverso";
+    return r;
+  }
+  // ---- collegamento con la memoria e con il PASSO 2 (Safari)
+  function swNome(pid, u, f) {
+    pid = Number(pid);
+    var x = (u && u.nomi && u.nomi[pid]) || info[pid] || ((f && f.roster) || []).filter(function (p) { return Number(p.pid) === pid; })[0];
+    return x && (x.n || x.name) ? String(x.n || x.name) : "#" + pid;
+  }
+  function swCoppia(s, u, f) { return s && s.stato === "presente" ? swNome(s.a, u, f) + " ↔ " + swNome(s.b, u, f) : "nessuno"; }
+  // Switch della formazione di lega in FVM: quello registrato, altrimenti dal corpo del salvataggio; mai di un'altra formazione
+  function swSorgente(u) {
+    if (!u || u.fonte === "fantaclub") return null;
+    var s = u.sw || null;
+    if (!s && u.corpo) s = fvmSwDaTesto(u.corpo, "corpo_lega");
+    if (!s) return null;
+    if (s.stato !== "sconosciuto" && ((s.tid && Number(u.tid) && s.tid !== Number(u.tid)) || (s.comp && Number(u.comp) && s.comp !== Number(u.comp))))
+      return { stato: "sconosciuto", motivo: "Switch di un'altra formazione", valori: {}, a: 0, b: 0 };
+    return s;
+  }
+  function swChiave(dest, target) { return fvmSwNum(dest && dest.tid) + "|" + fvmSwNum(dest && dest.comp) + "|" + fvmSwNum(target); }
+  function swDecisione(u, f, dest, fle, target) {
+    var fonte = u && u.fonte === "fantaclub" ? "fantaclub" : "leghe", lega = fonte === "fantaclub" ? null : swSorgente(u);
+    var t = fvmSwNum(target) || fvmSwNum(f && f.swTarget) || fvmSwNum(lega && lega.cmday);
+    var sc = (leggi("sw_scelte", {}) || {})[swChiave(dest, t)] || null;
+    var d = fvmSwDecidi({ fonte: fonte, lega: lega, fle: fle, target: t, dest: dest, scelta: sc });
+    d.fonte = fonte; d.target = t; d.chiave = swChiave(dest, t); d.legaSw = lega; d.fleSw = fle || null;
+    d.valori = fvmSwValori(d, { lega: lega, fle: fle, mdl: dest.mdl });
+    return d;
+  }
+  // PASSO 2: decisione con lo Switch letto dal CONTROLLO FLE (null se il controllo e precedente a questa versione:
+  // allora decide l'invio, con la pagina FLE appena letta)
+  function swPasso2(u, f, res) {
+    if (!u || !u.ok || !res || !f || !Number(f.tid) || !Number(f.comp) || !("sw" in f)) return null;
+    var dest = { tid: Number(f.tid), comp: Number(f.comp), starts: res.starts.map(function (p) { return Number(p.pid); }), bench: res.bench.map(function (p) { return Number(p.pid); }), mdl: u.modulo };
+    return swDecisione(u, f, dest, f.sw, f.swTarget);
+  }
+  // testo dell'avviso quando l'invio non puo partire
+  function swTesto(d, u, f) {
+    if (!d) return "";
+    if (d.motivo === "fle_non_letto" || d.motivo === "fle_non_verificabile")
+      return "Non riesco a verificare lo Switch su FLE per questa giornata: per non rischiare di cancellarlo o di riportarne uno vecchio, l'invio automatico è fermo. Tocca RIPETI CONTROLLO FLE, oppure controlla la formazione con MODIFICA SU FLE.";
+    if (d.motivo === "squadra_diversa") return "La pagina FLE mostra una squadra diversa da quella del controllo: invio fermato. Tocca RIPETI CONTROLLO FLE.";
+    if (d.motivo === "scelta_mancante" && d.caso === "conflitto")
+      return "Lo Switch della tua lega (" + swCoppia(d.legaSw, u, f) + ") è diverso da quello già su FLE (" + swCoppia(d.fleSw, u, f) + "): scegli nel PASSO 2 quale usare, poi CONFERMA E INVIA.";
+    if (d.motivo === "scelta_mancante")
+      return "Lo Switch su FLE (" + swCoppia(d.fleSw, u, f) + ") non è compatibile con la nuova formazione (" + d.mancantiFle.map(function (p) { return swNome(p, u, f); }).join(", ") + " non c'è): scegli MODIFICA o ELIMINA nel PASSO 2, poi CONFERMA E INVIA.";
+    return "Switch non verificabile: invio fermato.";
+  }
+  // riquadro SWITCH del PASSO 2 (vuoto se non c'e nulla da dire)
+  function swCarta(d, u, f) {
+    if (!d) return "";
+    var riga = function (t, col) { return "<div class='mu' style='margin-top:4px" + (col ? ";color:" + col : "") + "'>• " + esc(t) + "</div>"; };
+    var g = d.target ? " · giornata " + d.target + " di Serie A" : "";
+    if (d.caso === "fle_non_verificabile") return riga("Switch su FLE non verificabile ora: verrà riletto all'invio; se resta non verificabile l'invio si ferma, senza toccare nulla.", "#fbbf24");
+    if (d.caso === "copia") return riga("Switch della tua lega: " + swCoppia(d.legaSw, u, f) + " → verrà riportato su FLE.", "#4ade80");
+    if (d.caso === "uguale") return riga("Switch su FLE: " + swCoppia(d.fleSw, u, f) + " ✓ uguale alla tua lega.", "#4ade80");
+    var h = "";
+    if (d.caso === "lega_incompatibile" || (d.lega === "presente" && !d.legaCompat))
+      h += riga("Switch della tua lega (" + swCoppia(d.legaSw, u, f) + ") non riportabile: " + d.mancantiLega.map(function (p) { return swNome(p, u, f); }).join(", ") + " non è nella formazione FLE. Dopo l'invio puoi impostarlo con MODIFICA SU FLE.", "#fbbf24");
+    if (d.caso === "lega_non_letta") h += riga("Switch della tua lega non letto (formazione registrata senza i dati Switch): per riportarlo su FLE rifai FAI O MODIFICA, oppure ACQUISISCI.", "#fbbf24");
+    if (d.caso === "lega_precedente") h += riga("La formazione di lega in FVM riguarda una giornata precedente: il suo Switch non verrà riportato.", "#fbbf24");
+    if (d.flePrecedentePresente) h += riga("Su FLE c'è lo Switch di una giornata precedente (" + swCoppia(d.fleSw, u, f) + "): non verrà riportato alla nuova giornata.");
+    if (!d.opzioni.length) return h;
+    var nomi = { lega: "USA QUELLO DELLA LEGA", modifica: d.caso === "conflitto" ? "MODIFICA SU FLE" : "MODIFICA SWITCH", mantieni: d.caso === "conflitto" ? "MANTIENI QUELLO DI FLE" : "MANTIENI SWITCH", elimina: "ELIMINA SWITCH" };
+    h += "<div class='cd' style='margin-top:8px;padding:10px;border-left:4px solid #e2b33c'><div class='lb'>SWITCH SU FLE" + esc(g) + "</div>";
+    h += "<div class='mu' style='margin-top:4px'>Su FLE: <b>" + esc(swCoppia(d.fleSw, u, f)) + "</b>" + (d.fleCompat ? "" : " · non compatibile con la nuova formazione") + "</div>";
+    if (d.caso === "conflitto") h += "<div class='mu'>Nella tua lega: <b>" + esc(swCoppia(d.legaSw, u, f)) + "</b></div>";
+    if (d.scelta) {
+      h += "<div style='color:#4ade80;font-weight:800;margin-top:6px'>Scelta: " + esc(nomi[d.scelta]) + " ✓</div>";
+      // RC3 (come Android): FVM NON cambia lo Switch su FLE con MODIFICA; con LEGA e MANTIENI dice cosa scrive
+      if (d.scelta === "modifica") h += "<div class='mu' style='color:#fbbf24;font-weight:800'>" + (d.fleCompat ? "FVM NON cambia lo Switch su FLE: con l'invio resta " + esc(swCoppia(d.fleSw, u, f)) + ". Dopo l'invio tocca MODIFICA SU FLE e cambialo tu sul sito." : "FVM NON imposta lo Switch su FLE: " + esc(swCoppia(d.fleSw, u, f)) + " non è compatibile e viene tolto con l'invio. Dopo l'invio tocca MODIFICA SU FLE e impostalo tu sul sito.") + "</div>";
+      if (d.scelta === "lega") h += "<div class='mu'>Con l'invio FVM scrive su FLE lo Switch della tua lega: " + esc(swCoppia(d.legaSw, u, f)) + ".</div>";
+      if (d.scelta === "mantieni") h += "<div class='mu'>Con l'invio FVM riscrive su FLE lo Switch attuale: " + esc(swCoppia(d.fleSw, u, f)) + ".</div>";
+      if (d.scelta === "elimina") h += "<div class='mu'>Con l'invio lo Switch viene tolto da FLE.</div>";
+      h += "<button class='bt' data-a='sw_annulla'>CAMBIA SCELTA</button>";
+    } else {
+      h += "<div class='mu' style='margin-top:4px'>" + (d.obbligatoria ? "Scegli prima di CONFERMA E INVIA: senza una scelta l'invio non parte." : "Lo Switch può cambiare ogni giornata. Senza una scelta FVM lo lascia com'è.") + "</div>";
+      // RC3 (come Android): sotto ogni pulsante cosa fa DAVVERO (FVM scrive lo Switch solo con LEGA, MANTIENI ed ELIMINA)
+      var spiega = { lega: "FVM scrive su FLE: " + swCoppia(d.legaSw, u, f) + ".", mantieni: "FVM riscrive su FLE quello attuale: " + swCoppia(d.fleSw, u, f) + ".",
+        modifica: d.fleCompat ? "FVM non cambia lo Switch: lo cambi tu su FLE dopo l'invio." : "FVM non imposta lo Switch: lo imposti tu su FLE dopo l'invio.", elimina: "Con l'invio lo Switch viene tolto da FLE." };
+      d.opzioni.forEach(function (op) { h += "<button class='bt" + (op === d.evidenzia ? " oro" : "") + "' data-a='sw_" + op + "'>" + esc(nomi[op]) + (op === d.evidenzia ? " · suggerita" : "") + "</button>" + (spiega[op] ? "<div class='mu' style='font-size:12px;margin-top:2px'>" + esc(spiega[op]) + "</div>" : ""); });
+    }
+    return h + "</div>";
+  }
+  // PASSO 2 dopo l'invio: esito della verifica su FLE (nulla da dire se nessuno Switch era previsto ed e tutto regolare)
+  function swCartaInviata(f, u) {
+    var v = f && f.swVerifica, h = "";
+    var riga = function (t, col) { return "<div class='mu' style='margin-top:4px" + (col ? ";color:" + col : "") + "'>• " + esc(t) + "</div>"; };
+    if (f && f.swModifica) h += riga("Hai scelto MODIFICA: tocca MODIFICA SU FLE e imposta lo Switch con la pagina ufficiale FLE.", "#e2b33c");
+    // PROVA9: riepilogo della verifica individuale delle competizioni FLE (dettaglio nello STORICO)
+    var cv = f && f.compVerifica && Array.isArray(f.compVerifica.esiti) ? f.compVerifica.esiti : null;
+    if (cv && cv.length) {
+      var n = function (es) { return cv.filter(function (r) { return r.esito === es; }).length; };
+      var parti = [n("verificata") + " verificate"].concat(n("diversa") ? [n("diversa") + " diverse"] : [], n("da_verificare") ? [n("da_verificare") + " da verificare"] : [], n("senza_turno") ? [n("senza_turno") + " senza turno"] : [], n("classifica") ? [n("classifica") + " classifiche"] : []);
+      h += riga("Competizioni FLE: " + parti.join(" · ") + " (dettaglio nello STORICO INVII)", n("diversa") ? "#f87171" : n("da_verificare") ? "#fbbf24" : "#4ade80");
+    }
+    // PROVA11: RIPROVA VERIFICA (solo letture) quando una lettura di controllo non e riuscita
+    var riprova = f && f.verificaRif && ((v && v.esito === "non_letto") || (cv && cv.some(function (r) { return r.esito === "da_verificare" && /non lett|non riuscit|tempo|rete|annullat|non confermat|elenco/i.test(String(r.motivo || "") + " " + String(r.nota || "")); })));
+    var bottone = riprova ? "<button class='bt' data-a='riprova_verifica'>RIPROVA VERIFICA</button><div class='mu' style='font-size:11px'>Solo lettura: nessun invio, nessuna modifica, nessuna nuova consegna.</div>" : "";
+    if (!v) return h + bottone;
+    if (v.esito === "ok" && v.atteso !== "nessuno") h += riga("Switch su FLE verificato ✓ (" + swCoppia({ stato: "presente", a: Number(v.atteso.split("-")[0]), b: Number(v.atteso.split("-")[1]) }, u, f) + ")", "#4ade80");
+    else if (v.esito === "ok" && f.swEliminato) h += riga("Switch tolto da FLE ✓ (verificato)", "#4ade80");
+    else if (v.esito === "diverso") h += riga("Lo Switch salvato su FLE è diverso da quello previsto: controllalo con MODIFICA SU FLE.", "#f87171") + (Number(v.conferme) > 1 ? riga("Differenza confermata da " + Number(v.conferme) + " letture del sito.", "#f87171") : "");
+    else if (v.esito === "non_letto") h += riga("Formazione SALVATA su FLE ✓ · Switch NON VERIFICABILE ora: " + fvmMotivoBreve(v) + ". Non significa che lo Switch manchi.", "#fbbf24");
+    if (v.daVerificare && v.daVerificare.length) h += riga("Switch: campo «" + v.daVerificare.join(", ") + "» diverso da quello inviato (significato non ancora noto): da verificare.", "#fbbf24");
+    return h + bottone;
+  }
+  // PROVA11: motivo tecnico in parole semplici (mai intestazioni o credenziali)
+  function fvmMotivoBreve(r) {
+    if (!r) return "lettura non riuscita";
+    var T = { rete: "errore di rete", annullata: "lettura annullata dal browser", tempo: "il sito non ha risposto in tempo", risposta: "risposta incompleta", accesso: "accesso al sito non disponibile",
+      squadra: "la risposta riguarda un'altra squadra", non_confermato: "differenza non confermata da una seconda lettura" };
+    var t = r.tipo === "http" ? String(r.motivo || "risposta del sito non valida") : T[r.tipo] || String(r.motivo || "lettura non riuscita");
+    return t + (Number(r.tentativi) > 1 ? " (" + Number(r.tentativi) + " tentativi)" : "");
+  }
+  // PROVA11: avvisi dopo una verifica (salvataggio riuscito: una lettura fallita NON e un salvataggio fallito)
+  function fvmAvvisiVerifica(rSw, rComp) {
+    var avv = [];
+    if (rSw && rSw.esito === "diverso") avv.push("Switch diverso da quello previsto");
+    else if (rSw && rSw.esito === "non_letto") avv.push("verifica dello Switch non riuscita (" + fvmMotivoBreve(rSw) + "), puoi ripeterla");
+    if (rComp && rComp.some(function (r) { return r.esito === "diversa"; })) avv.push("formazione diversa in una competizione FLE");
+    return avv;
+  }
+  // scelta dell'utente (MODIFICA / MANTIENI / ELIMINA / USA QUELLO DELLA LEGA): mai eseguita da sola, ricordata per
+  // squadra + competizione + giornata + situazione dello Switch
+  function swScelta(azione) {
+    var u = formazioneSorgente(), f = leggi("fle", null) || {}, res = risultatoFle(), d = swPasso2(u, f, res);
+    if (!d) return;
+    var tutte = leggi("sw_scelte", {}) || {};
+    if (azione === "annulla") { delete tutte[d.chiave]; scrivi("sw_scelte", tutte); log("SWITCH SCELTA", { azione: "annullata", chiave: d.chiave }); aggiornaPannello(); return; }
+    if (d.opzioni.indexOf(azione) < 0) { log("SWITCH SCELTA", { azione: azione, esito: "non disponibile in questa situazione" }); aggiornaPannello(); return; }
+    if (azione === "elimina" && !confirm("Eliminare lo Switch " + swCoppia(d.fleSw, u, f) + " su FLE?\n\nVerrà tolto con l'invio della formazione. Puoi impostarne un altro con MODIFICA SU FLE.")) return;
+    tutte[d.chiave] = { azione: azione, situazione: d.situazione, at: Date.now() };
+    var ch = Object.keys(tutte).sort(function (x, y) { return Number(tutte[y].at || 0) - Number(tutte[x].at || 0); });
+    ch.slice(30).forEach(function (k) { delete tutte[k]; });
+    scrivi("sw_scelte", tutte);
+    log("SWITCH SCELTA", { azione: azione, chiave: d.chiave, caso: d.caso });
+    aggiornaPannello();
+  }
+  // invio: decisione con la pagina FLE APPENA letta (Switch, squadra, competizione) e la formazione FLE definitiva
+  function swDecisioneInvio(task) {
+    var pl = ctl.payload, f = leggi("fle", {}) || {}, u = formazioneSorgente(), inv = (task && task.inv) || {};
+    if (!pl || !pl.sw) return { blocca: true, motivo: "fle_non_letto", caso: "fle_non_verificabile" };
+    var dest = { tid: Number(pl.tid || 0), comp: Number(pl.comp || 0), starts: (inv.starts || []).map(Number), bench: (inv.bench || []).map(Number), mdl: inv.mdl };
+    if (Number(f.tid) && dest.tid !== Number(f.tid)) return { blocca: true, motivo: "squadra_diversa", caso: "squadra_diversa" };
+    var target = fvmSwNum(ctl.status && ctl.status.mday) || fvmSwNum(f.swTarget);
+    var d = swDecisione(u, f, dest, pl.sw, target);
+    // il PASSO 2 mostra cio che e stato appena letto (anche se l'invio si ferma)
+    f.sw = pl.sw; if (d.target) f.swTarget = d.target; f.swLettoAt = Date.now(); scrivi("fle", f);
+    return d;
+  }
+  // invio fermato PRIMA del salvataggio: nessuna richiesta a FLE, nessun esito "riuscito"
+  function invioFermato(d, task) {
+    var u = formazioneSorgente(), f = leggi("fle", {}) || {}, testo = swTesto(d, u, f);
+    if (invioCorrente) { invioCorrente.finito = true; try { invioCorrente.w.chiudi(); } catch (e) {} }
+    window.__fvmInvio = null;
+    sScrivi("task", null);
+    log("INVIO FLE FERMATO", { motivo: d && d.motivo, caso: d && d.caso, situazione: d && d.situazione, fonte: task && task.fonte || "leghe" });
+    try { storicoBloccato("lega_fle", (task && task.fonte === "fantaclub" && (legaFc() || {}).nl) || "", "Switch: " + testo); } catch (e) {}
+    f.swFermato = { at: Date.now(), testo: testo };
+    scrivi("fle", f);
+    sScrivi("apri", "main");
+    sScrivi("flash", "Invio FERMATO prima del salvataggio (nessuna modifica su FLE): " + testo);
+    var torna = f.ritorno && f.ritorno.indexOf("/" + FLE_SLUG + "/") < 0 ? f.ritorno : urlLegaSorgente();
+    location.assign(torna);
+  }
+  // PROVA11 · LETTURE DOPO IL SALVATAGGIO (solo GET, mai una scrittura). Tipo di errore: "rete" (Safari «Load failed»,
+  // «Failed to fetch»), "annullata", "tempo", "http", "risposta" (non leggibile), "accesso" (intestazioni assenti).
+  function fvmErroreLettura(e) {
+    var msg = String(e && e.message || e || "errore").slice(0, 80), http = Number(e && e.http) || 0;
+    if (http) return { tipo: "http", http: http, motivo: "risposta del sito " + http };
+    if (e && e.name === "AbortError") return { tipo: "annullata", motivo: "lettura annullata dal browser (" + msg + ")" };
+    if (/tempo scaduto/i.test(msg)) return { tipo: "tempo", motivo: "tempo scaduto" };
+    if (/load failed|failed to fetch|networkerror|network|rete/i.test(msg)) return { tipo: "rete", motivo: "errore di rete (" + msg + ")" };
+    if (/json|unexpected|parse/i.test(msg)) return { tipo: "risposta", motivo: "risposta non leggibile" };
+    return { tipo: "altro", motivo: msg };
+  }
+  // una lettura con tentativi limitati: subito, dopo 1,5 s, dopo altri 3 s (4 s ciascuno, al massimo ~12 s in tutto).
+  // Nuovo tentativo solo per rete / annullata / tempo / risposta non leggibile / HTTP 5xx o 429; mai per 401, 403, 404.
+  // Non rifiuta mai: risolve { ok, json } oppure { ok: false, tipo, motivo }, con tentativi, durata e provenienza delle intestazioni.
+  function fvmLeggiConTentativi(path, opz) {
+    opz = opz || {};
+    var pause = opz.pause || [0, 1500, 3000], perTentativo = opz.perTentativo || 4000, massimo = opz.massimo || 12000;
+    var hdr = ctl.hdrLettura || ctl.hdr, da = ctl.hdrLettura ? ctl.hdrLetturaFrom || "lettura del sito" : ctl.hdr ? "riserva: " + (ctl.hdrFrom || "?") : "";
+    var t0 = Date.now(), n = 0;
+    return new Promise(function (fine) {
+      var esci = function (r) { fine(Object.assign(r, { tentativi: n, ms: Date.now() - t0, hdrFrom: da, nomiIntestazioni: Object.keys(hdr || {}) })); };
+      if (!hdr) return esci({ ok: false, tipo: "accesso", motivo: "accesso del sito non disponibile" });
+      var prova = function () {
+        n++;
+        new Promise(function (ok, no) {
+          var t = setTimeout(function () { no(new Error("tempo scaduto")); }, perTentativo);
+          fetchOriginale(API + path, { method: "GET", headers: hdr, credentials: "include", cache: "no-store" })
+            .then(function (r) { return r.text().then(function (tx) { clearTimeout(t); if (!r.ok) { var e = new Error("stato " + r.status); e.http = r.status; throw e; } ok(JSON.parse(tx)); }); })
+            .catch(function (e) { clearTimeout(t); no(e); });
+        }).then(function (j) { esci({ ok: true, json: j }); }, function (e) {
+          var er = fvmErroreLettura(e), ancora = er.tipo !== "accesso" && (er.tipo !== "http" || er.http >= 500 || er.http === 429);
+          var pausa = pause[n];
+          if (!ancora || pausa === undefined || Date.now() - t0 + pausa + perTentativo > massimo) return esci(Object.assign({ ok: false }, er));
+          setTimeout(prova, pausa);
+        });
+      };
+      prova();
+    });
+  }
+  // lettura CONDIVISA: la stessa formazione ufficiale serve alla verifica dello Switch e a quella delle competizioni (una sola
+  // richiesta per indirizzo). "prima" = letture gia fatte dal sito (pagina FLE), usate senza nuove richieste.
+  function fvmLettoreCondiviso(prima) {
+    var memo = {};
+    Object.keys(prima || {}).forEach(function (p) { memo[p] = Promise.resolve({ ok: true, json: prima[p], tentativi: 0, ms: 0, hdrFrom: "lettura della pagina FLE (sito)" }); });
+    return function (path, nuova) {
+      if (nuova || !memo[path]) memo[path] = fvmLeggiConTentativi(path);
+      return memo[path];
+    };
+  }
+  // verifica dopo il salvataggio: rilettura della formazione FLE (sola lettura) con tentativi limitati (PROVA11).
+  // "non_letto" = NON VERIFICABILE (lettura non riuscita, con il motivo tecnico): mai «Switch assente». "diverso" solo se due
+  // letture riuscite lo confermano (una lettura subito dopo il salvataggio puo trovare il dato non ancora aggiornato).
+  function verificaSwitchFle(comp, tid, atteso, fatto, leggi) {
+    var finito = false, chiudi = function (r) { if (finito) return; finito = true; log("SWITCH VERIFICA", r); fatto(r); };
+    if (!atteso || !atteso.valori) return chiudi({ esito: "nessuna_attesa" });
+    if ((!ctl.hdr && !ctl.hdrLettura) || !Number(comp)) return chiudi({ esito: "non_letto", tipo: "accesso", motivo: "accesso del sito non disponibile" });
+    setTimeout(function () { chiudi({ esito: "non_letto", tipo: "tempo", motivo: "tempo scaduto" }); }, 16000);
+    leggi = leggi || fvmLettoreCondiviso();
+    var path = "/gaming/v1/teamLineup/visualizza/" + meDivisione(FLE_SLUG) + "/" + Number(comp);
+    var dati = function (x) { return { tentativi: x.tentativi, ms: x.ms, hdrFrom: x.hdrFrom }; };
+    var valuta = function (x) {
+      if (!x.ok) return Object.assign({ esito: "non_letto", tipo: x.tipo, motivo: x.motivo }, dati(x));
+      var s = fvmSwDaTesto(x.json, "verifica_fle");
+      if (s.stato !== "sconosciuto" && Number(tid) && s.tid !== Number(tid)) return Object.assign({ esito: "non_letto", tipo: "squadra", motivo: "squadra diversa nella risposta" }, dati(x));
+      if (s.stato === "sconosciuto") return Object.assign({ esito: "non_letto", tipo: "risposta", motivo: "risposta incompleta: " + (s.motivo || "Switch non leggibile") }, dati(x));
+      return Object.assign(fvmSwVerifica(atteso.valori, s), dati(x));
+    };
+    leggi(path).then(function (x) {
+      var r = valuta(x);
+      if (r.esito !== "diverso" && r.tipo !== "risposta") return chiudi(r);
+      // conferma con una seconda lettura NUOVA: «diverso» solo se confermato; risposta incompleta: un'altra possibilita
+      setTimeout(function () {
+        if (finito) return;
+        leggi(path, true).then(function (x2) {
+          var r2 = valuta(x2);
+          if (r.esito === "diverso" && r2.esito === "diverso") return chiudi(Object.assign(r2, { conferme: 2 }));
+          if (r2.esito === "ok") return chiudi(Object.assign(r2, { nota: r.esito === "diverso" ? "prima lettura diversa, non confermata dalla seconda" : "prima risposta incompleta" }));
+          if (r.esito === "diverso") return chiudi(Object.assign({ esito: "non_letto", tipo: "non_confermato", motivo: "una lettura diversa non confermata dalla seconda (" + (r2.motivo || r2.esito) + ")", atteso: r.atteso, letto: r.letto }, dati(x2)));
+          if (r2.esito === "diverso") return chiudi(Object.assign({ esito: "non_letto", tipo: "non_confermato", motivo: "una sola lettura diversa (la prima era incompleta): non confermata", atteso: r2.atteso, letto: r2.letto }, dati(x2)));
+          chiudi(r2);
+        });
+      }, 1500);
+    });
+  }
+  // PROVA9 · FASE B: verifica INDIVIDUALE delle competizioni FLE dopo il salvataggio generale (SALVA PER TUTTE).
+  // Confronto (puro) della formazione ufficiale di UNA competizione con quella inviata: squadra, competizione, giornata di
+  // Serie A (cmday) attesa, modulo, 11 titolari, panchina con l'ordine, Switch quando inviato. Giornata diversa o risposta
+  // senza formazione = "serve_calendario" (mai "senza turno" senza il calendario).
+  function fvmVerificaFormazioneComp(dto, ctx, compId) {
+    ctx = ctx || {};
+    var inv = ctx.inv || {};
+    if (!dto || typeof dto !== "object" || !Array.isArray(dto.starts)) return { esito: "serve_calendario", motivo: "risposta senza formazione" };
+    if (Number(dto.tid) !== Number(ctx.tid) || Number(dto.idcomp) !== Number(compId)) return { esito: "da_verificare", motivo: "la risposta riguarda un'altra squadra o un'altra competizione" };
+    var g = { giornata: Number(dto.mday) > 0 ? Number(dto.mday) : undefined, giornataSA: Number(dto.cmday) > 0 ? Number(dto.cmday) : undefined };
+    if (!Number(ctx.target) || Number(dto.cmday) !== Number(ctx.target))
+      return Object.assign(g, { esito: "serve_calendario", motivo: "formazione letta della giornata " + (Number(dto.cmday) || "?") + " di Serie A (attesa " + (Number(ctx.target) || "?") + ")" });
+    var ids = function (a) { return (Array.isArray(a) ? a : []).map(idDi).filter(Boolean); };
+    var t = ids(dto.starts), b = ids(dto.bench), ti = (inv.starts || []).map(Number), bi = (inv.bench || []).map(Number), diff = [];
+    if (fvmSwModulo(dto.mdl) !== fvmSwModulo(inv.mdl)) diff.push("modulo " + (fvmSwModulo(dto.mdl) || "?") + " invece di " + fvmSwModulo(inv.mdl));
+    if (t.length !== 11 || chiave(t) !== chiave(ti)) diff.push("titolari diversi");
+    if (b.join(",") !== bi.join(",")) diff.push(chiave(b) === chiave(bi) ? "panchina: stessi giocatori, ordine diverso" : "panchina diversa");
+    var swNonLetto = false;
+    if (ctx.sw) {
+      var v = fvmSwVerifica(ctx.sw, fvmSwLeggi(dto, "verifica competizione"));
+      g.switchEsito = v.esito;
+      if (v.esito === "diverso") diff.push("Switch diverso"); else if (v.esito === "non_letto") swNonLetto = true;
+    }
+    if (diff.length) return Object.assign(g, { esito: "diversa", differenze: diff });
+    if (swNonLetto) return Object.assign(g, { esito: "da_verificare", motivo: "formazione uguale, Switch non leggibile nella risposta" });
+    return Object.assign(g, { esito: "verificata" });
+  }
+  // calendario della competizione (pura): SENZA TURNO solo se il calendario lo dice (nessun turno nella giornata di Serie A,
+  // oppure squadra senza partita nel turno); turno con la partita della squadra, senza avversario o senza partite = da verificare
+  function fvmTurnoCalendario(cal, target, tid, prima) {
+    var p = prima || {}, motivo = p.motivo ? p.motivo + "; " : "";
+    if (!Array.isArray(cal)) return Object.assign({}, p, { esito: "da_verificare", motivo: motivo + "calendario non leggibile" });
+    var turno = cal.filter(function (r) { return r && Number(r.championshipMatchDay) === Number(target); })[0];
+    if (!turno) return Object.assign({}, p, { esito: "senza_turno", motivo: "il calendario non ha turni nella giornata " + target + " di Serie A" });
+    var m = (turno.matches || []).filter(Boolean), con = m.filter(function (x) { return Number(x.tIdH) === Number(tid) || Number(x.tIdA) === Number(tid); })[0];
+    var g = Number(turno.matchDay) > 0 ? Number(turno.matchDay) : p.giornata;
+    if (!m.length) return Object.assign({}, p, { giornata: g, esito: "da_verificare", motivo: motivo + "turno " + (g || "?") + " senza partite nel calendario (calendario incerto)" });
+    if (!con) return Object.assign({}, p, { giornata: g, esito: "senza_turno", motivo: "iscritta ma senza partita nel turno " + (g || "?") + " (calendario)" });
+    if (!Number(con.tIdH) || !Number(con.tIdA)) return Object.assign({}, p, { giornata: g, esito: "da_verificare", motivo: motivo + "squadra senza avversario nel turno " + (g || "?") });
+    return Object.assign({}, p, { giornata: g, esito: "da_verificare", motivo: motivo + "il calendario prevede la partita (turno " + (g || "?") + ")" });
+  }
+  // lettura (SOLA LETTURA) di ogni competizione coinvolta, in parallelo, con tentativi limitati (PROVA11: lettore condiviso
+  // con la verifica dello Switch, ~12 s per lettura, 16 s in tutto). Ogni competizione ha il suo esito: una che non risponde
+  // non cancella quelle gia verificate. Nessun salvataggio. Elenco non leggibile: verificata almeno la competizione d'ingresso.
+  function verificaCompetizioniFle(ctx, fatto) {
+    var finito = false, risultati = {}, lista = [], fonte = "pagina FLE";
+    var chiudi = function (motivo) {
+      if (finito) return; finito = true;
+      var out = lista.map(function (c) { return risultati[c.id] || Object.assign({}, c, { esito: "da_verificare", motivo: motivo || "tempo scaduto" }); });
+      log("VERIFICA COMPETIZIONI FLE", { giornataSA: ctx.target, esiti: out.map(function (r) { return r.id + ":" + r.esito; }), elenco: fonte, nota: motivo || "" });
+      fatto(out);
+    };
+    if ((!ctl.hdr && !ctl.hdrLettura) || !Number(ctx.tid)) return chiudi("accesso del sito non disponibile");
+    setTimeout(function () { chiudi("tempo massimo della verifica (16 s) superato"); }, 16000);
+    var lettore = ctx.leggi || fvmLettoreCondiviso();
+    var leggiJson = function (path, nuova) {
+      return lettore(path, nuova).then(function (x) {
+        if (x.ok) return x.json;
+        var e = new Error(x.motivo || "lettura non riuscita"); e.tipo = x.tipo; throw e;
+      });
+    };
+    var avvia = function (comps, notaElenco) {
+      lista = storicoCompetizioniFle(comps, ctx.tid, ctx.ingresso) || [];
+      // elenco senza le squadre iscritte (o non leggibile): si verifica almeno la competizione d'ingresso, dichiarandolo
+      if (!lista.length && Number(ctx.ingresso)) lista = [{ id: Number(ctx.ingresso), nome: String(ctx.ingressoNome || ctx.ingresso).slice(0, 60), natura: "obbligo", coinvolta: true, ingresso: true, nota: notaElenco || "iscrizioni non disponibili: verificata solo la competizione d'ingresso" }];
+      if (!lista.length) return chiudi("elenco delle competizioni FLE non disponibile");
+      var attese = lista.length;
+      var uno = function (c, r) { if (finito || risultati[c.id]) return; risultati[c.id] = Object.assign({}, c, r); if (--attese <= 0) chiudi(""); };
+      var calendario = function (c, prima) {
+        return leggiJson("/onboarding/v1/league/competition/calendar/" + c.id).then(function (cal) { uno(c, fvmTurnoCalendario(cal, ctx.target, ctx.tid, prima)); })
+          .catch(function (e) { uno(c, Object.assign({}, prima, { esito: "da_verificare", motivo: (prima && prima.motivo ? prima.motivo + "; " : "") + "calendario non letto (" + String(e && e.message || e).slice(0, 40) + ")" })); });
+      };
+      lista.forEach(function (c) {
+        if (c.natura === "ranking") return uno(c, { esito: "classifica", motivo: "classifica a punti: nessuna formazione da consegnare" });
+        if (c.natura !== "obbligo") return uno(c, { esito: "da_verificare", motivo: "natura della competizione non verificata" });
+        if (!Number(ctx.target)) return uno(c, { esito: "da_verificare", motivo: "giornata di Serie A del salvataggio non nota" });
+        var pathC = "/gaming/v1/teamLineup/visualizza/" + ctx.divisione + "/" + c.id;
+        var nonLetta = function (e) {
+          // formazione non letta: solo il calendario puo dire "senza turno"; altrimenti resta da verificare
+          calendario(c, { motivo: "formazione non letta (" + String(e && e.message || e).slice(0, 60) + ")" });
+        };
+        leggiJson(pathC).then(function (j) {
+          var e = fvmVerificaFormazioneComp(trovaDto(j, 0) || trovaFormazione(j, 0), ctx, c.id);
+          if (e.esito === "serve_calendario") return calendario(c, e);
+          if (e.esito !== "diversa") return uno(c, e);
+          // PROVA11: «diversa» solo se confermata da una seconda lettura nuova (il sito puo non essere ancora aggiornato)
+          setTimeout(function () {
+            if (finito) return;
+            leggiJson(pathC, true).then(function (j2) {
+              var e2 = fvmVerificaFormazioneComp(trovaDto(j2, 0) || trovaFormazione(j2, 0), ctx, c.id);
+              if (e2.esito === "diversa") return uno(c, Object.assign(e2, { conferme: 2 }));
+              if (e2.esito === "serve_calendario") return calendario(c, e2);
+              uno(c, e2.esito === "verificata" ? Object.assign(e2, { nota: "prima lettura diversa, non confermata dalla seconda" }) : e2);
+            }).catch(function (e3) { uno(c, Object.assign({}, e, { esito: "da_verificare", motivo: "differenza non confermata: seconda lettura non riuscita (" + String(e3 && e3.message || e3).slice(0, 60) + ")" })); });
+          }, 1500);
+        }).catch(nonLetta);
+      });
+    };
+    if (Array.isArray(ctx.comps) && ctx.comps.length) avvia(ctx.comps);
+    else {
+      fonte = "letto da FVM";
+      leggiJson("/onboarding/v1/league/competitions").then(function (j) { avvia(listaCompetizioni(j)); }).catch(function (e) {
+        // PROVA11: elenco non leggibile -> almeno la competizione d'ingresso (prima: nessuna verifica)
+        fonte = "non letto";
+        avvia([], "elenco delle competizioni FLE non letto (" + String(e && e.message || e).slice(0, 60) + "): verificata solo la competizione d'ingresso");
+      });
+    }
+  }
+  // MODIFICHE ESTERNE · Switch: riferimento separato dall'impronta della formazione (gli avvisi gia chiusi non ritornano)
+  function swRegistra(k, s, fonte) {
+    if (!k || !s) return;
+    var tutti = leggi("sw_rif", {}) || {};
+    tutti[k] = { stato: s.stato, a: s.a || 0, b: s.b || 0, mdl: fvmSwModulo(s.valori && s.valori.swtcMdl), imp: fvmSwImpronta(s), fonte: String(fonte || ""), at: Date.now() };
+    var ch = Object.keys(tutti).sort(function (x, y) { return Number(tutti[y].at || 0) - Number(tutti[x].at || 0); });
+    ch.slice(40).forEach(function (x) { delete tutti[x]; });
+    scrivi("sw_rif", tutti);
+    var ign = leggi("sw_ign", {}) || {};
+    if (ign[k]) { delete ign[k]; scrivi("sw_ign", ign); }
+  }
+
   // ---------------------------------------------------------------- salvataggio (lega e FLE)
   function trovaFormazione(x, d) {
     if (!x || typeof x !== "object" || d > 4) return null;
@@ -2583,8 +3742,12 @@
     }
     if ("allComp" in o || true) o.allComp = typeof o.allComp === "number" ? 1 : true;
     if ("visb" in o || true) o.visb = typeof o.visb === "number" ? 0 : false;
-    ["swtcA", "swtcB", "swtc"].forEach(function (k) { if (k in o) o[k] = 0; });
-    if ("swtcMdl" in o) o.swtcMdl = typeof o.swtcMdl === "number" ? Number(inv.mdl) : String(inv.mdl);
+    // PROVA8: Switch = i 5 campi decisi prima del salvataggio (swDecisioneInvio), da UNA sola fonte. Senza decisione i
+    // campi restano quelli del sito (nessun azzeramento: prima la 1.3.5 li azzerava sempre, cancellando lo Switch su FLE).
+    var swPrima = {};
+    ["swtcA", "swtcB", "swtc", "swtcMdl", "pos"].forEach(function (k) { if (k in o) swPrima[k] = o[k]; });
+    if (inv.sw && inv.sw.valori) log("INVIO SWITCH", { scrittura: inv.sw.scrittura, caso: inv.sw.caso, sito: swPrima, campi: fvmSwScrivi(o, inv.sw.valori, inv.sw.posSoloSePresente), scritto: inv.sw.valori });
+    else log("INVIO SWITCH", { scrittura: "nessuna", sito: swPrima, motivo: "nessuna decisione Switch: campi del sito invariati" });
     log("INVIO CORPO", { prima: prima, titolari: o.starts.length, panchina: o.bench.length, mdl: o.mdl, capt: o.capt, allComp: o.allComp, visb: o.visb });
   }
 
@@ -2602,13 +3765,21 @@
         window.__fvmInvio.inviato = true;
         return resolve({ corpo: JSON.stringify(j), salvataggio: { tipo: "fle" } });
       }
+      // PROVA12 A1: Fantaclub in SOLO FLE / MODIFICA SU FLE con squadra FLE diversa o non verificabile: il salvataggio NON parte
+      var bloccoFc = bloccoSalvataggioFc(o);
+      if (bloccoFc) {
+        log("GUARDIA FLE", { piattaforma: "fantaclub", esito: "salvataggio bloccato", tid: Number(o.tid || 0), motivo: bloccoFc.slice(0, 160) });
+        avviso(bloccoFc, true);
+        return resolve({ corpo: null, salvataggio: null, blocca: bloccoFc });
+      }
       // 1.1.0: un salvataggio SOLO LEGA (anche di un'altra lega) non sostituisce la richiesta modello usata per FLE.
       if (!suFle() && leggi("modo", "lega_fle") !== "solo_lega") scrivi("save_req", { url: String(url || ""), metodo: String(metodo || "PUT") });
       var ids = o.bench.map(idDi);
       var dati = {
         at: Date.now(), lega: suFle() ? FLE_SLUG : (slugDaPagina() || legaCorrente()), suFle: suFle(),
         modulo: String(o.mdl || o.module || ""), titolari: o.starts.map(idDi), panchina: ids, cambiata: false,
-        tid: Number(o.tid || 0), comp: Number(o.idcomp || 0), capt: o.capt, corpo: raw
+        tid: Number(o.tid || 0), comp: Number(o.idcomp || 0), capt: o.capt, corpo: raw,
+        sw: fvmSwLeggi(o, suFle() ? "salvataggio_fle" : "salvataggio_fvm") // PROVA8: Switch del salvataggio, legato a questa formazione
       };
       if (o.bench.length < 2 || ids.some(function (x) { return !x; })) return resolve({ corpo: null, salvataggio: dati });
       var k = chiave(ids);
@@ -2638,7 +3809,17 @@
     if (dati.suFle) {
       // formazione ritoccata a mano su FLE (MODIFICA SU FLE)
       var f = leggi("fle", null);
-      if (f) { f.stato = "inviata"; f.manuale = Date.now(); scrivi("fle", f); }
+      if (f) {
+        f.stato = "inviata"; f.manuale = Date.now();
+        // PROVA8: Switch salvato a mano con la pagina ufficiale FLE (FVM non lo tocca): registrato e poi verificato
+        if (dati.sw && dati.sw.stato !== "sconosciuto") { f.sw = dati.sw; f.swManuale = Date.now(); delete f.swModifica; delete f.swFermato; delete f.swEliminato; f.swVerifica = null; }
+        scrivi("fle", f);
+        if (dati.sw && dati.sw.stato !== "sconosciuto") verificaSwitchFle(dati.comp || f.comp, dati.tid || f.tid, { valori: dati.sw.valori }, function (r) {
+          var f3 = leggi("fle", null); if (!f3) return;
+          f3.swVerifica = r; scrivi("fle", f3);
+          try { if (pannello && pannelloPrincipale) aggiornaPannello(); } catch (e) {}
+        });
+      }
       avviso("Formazione salvata su FLE ✓");
       setTimeout(function () { apriPannello(); }, 1300);
       return;
@@ -2690,7 +3871,7 @@
           var src = opzioni.headers || (richiesta && richiesta.headers);
           if (src && typeof src.forEach === "function") src.forEach(function (v, k) { hh[k] = v; });
           else if (src) Object.keys(src).forEach(function (k) { hh[k] = src[k]; });
-          tieniIntestazioni(url, hh);
+          tieniIntestazioni(url, hh, metodo);
         }
       } catch (e) {}
       function esegui(prep) {
@@ -2699,12 +3880,14 @@
             try { risposta.clone().text().then(function (t) { salvataggioRiuscito(prep.salvataggio, risposta.ok, risposta.status, t); }); }
             catch (e) { salvataggioRiuscito(prep.salvataggio, risposta.ok, risposta.status, ""); }
           }
-          if (metodo === "GET") { try { risposta.clone().text().then(function (t) { esaminaRisposta(t, url); }).catch(function () {}); } catch (e) {} }
+          if (metodo === "GET") { try { risposta.clone().text().then(function (t) { esaminaRisposta(t, url); identitaDaRisposta(url, risposta.status, t); }).catch(function () {}); } catch (e) {} }
           return risposta;
         });
       }
       if (metodo !== "GET" && metodo !== "HEAD" && typeof opzioni.body === "string" && opzioni.body.indexOf('"bench"') >= 0) {
         return preparaSalvataggio(opzioni.body, url, metodo).then(function (prep) {
+          // PROVA12 A1: salvataggio bloccato da FVM = la richiesta NON parte (il sito riceve un errore, la pagina resta aperta)
+          if (prep.blocca) return Promise.reject(new Error("FVM: salvataggio su FLE bloccato (squadra FLE diversa o non verificabile)"));
           if (prep.corpo !== null) args[1] = Object.assign({}, opzioni, { body: prep.corpo });
           return esegui(prep);
         });
@@ -2731,13 +3914,15 @@
   XHR.prototype.send = function (corpo) {
     var xhr = this;
     var m = xhr.__fvmMetodo || "GET";
-    try { tieniIntestazioni(xhr.__fvmUrl, xhr.__fvmH); } catch (e) {}
+    try { tieniIntestazioni(xhr.__fvmUrl, xhr.__fvmH, m); } catch (e) {}
     if (m === "GET" || m === "HEAD") {
-      try { xhr.addEventListener("load", function () { try { if (!xhr.responseType || xhr.responseType === "text") esaminaRisposta(xhr.responseText, xhr.__fvmUrl); else if (xhr.responseType === "json") esaminaRisposta(JSON.stringify(xhr.response), xhr.__fvmUrl); } catch (e) {} }); } catch (e) {}
+      try { xhr.addEventListener("load", function () { try { if (!xhr.responseType || xhr.responseType === "text") { esaminaRisposta(xhr.responseText, xhr.__fvmUrl); identitaDaRisposta(xhr.__fvmUrl, xhr.status, xhr.responseText); } else if (xhr.responseType === "json") { esaminaRisposta(JSON.stringify(xhr.response), xhr.__fvmUrl); identitaDaRisposta(xhr.__fvmUrl, xhr.status, JSON.stringify(xhr.response)); } } catch (e) {} }); } catch (e) {}
       return inviaOriginale.apply(xhr, arguments);
     }
     if (typeof corpo !== "string" || corpo.indexOf('"bench"') < 0 || corpo.indexOf('"starts"') < 0) return inviaOriginale.apply(xhr, arguments);
     preparaSalvataggio(corpo, xhr.__fvmUrl, m).then(function (prep) {
+      // PROVA12 A1: salvataggio bloccato da FVM = la richiesta NON parte; il sito riceve un errore di rete, la pagina resta aperta
+      if (prep.blocca) { try { xhr.dispatchEvent(new Event("error")); xhr.dispatchEvent(new Event("loadend")); } catch (e) {} return; }
       try {
         xhr.addEventListener("load", function () {
           var t = "";
@@ -2882,6 +4067,8 @@
     host.id = "fvm-root";
     document.body.appendChild(host);
     radice = host.attachShadow ? host.attachShadow({ mode: "open" }) : host;
+    // 1.3.5-RC: a ogni schermata di FVM aperta, silenzio dei lettori della pagina di Leghe Fantacalcio (vedi avviaSilenzioLeghe)
+    try { if (location.hostname === "leghe.fantacalcio.it" && window.MutationObserver) new MutationObserver(function () { silenziaLegheOra(); }).observe(radice, { childList: true }); } catch (e) {}
     var st = document.createElement("style");
     st.textContent = STILE;
     radice.appendChild(st);
@@ -3069,12 +4256,14 @@
   }
   function consegnaFantaclub() {
     mostraApertura("Apro Fantaclub…");
-    scrivi("modo", "lega_fle");
+    // RC3 (come Android): LEGA + FLE solo per una lega già riconosciuta nel circuito FLE; nuova lega = SOLO LEGA finché non è riconosciuta
+    var modoFc = legaFc() && inCircuitoFc(legaFc().nl) ? "lega_fle" : "solo_lega";
+    scrivi("modo", modoFc);
     try { localStorage.removeItem(PREFISSO + "fc_errore"); } catch (e) {}
     var lg = legaFc(), circuito = {};
     Object.keys(FC_CIRCUITO).forEach(function (nl) { circuito[nl] = { nome: FC_CIRCUITO[nl], squadre: squadreFantaclub(nl).map(function (t) { return t[1]; }) }; });
     // lega nota: la sua pagina Consegna; lega non ancora nota: Fantaclub, dove l'utente apre la Consegna della sua lega
-    var id = inviaPassaggio("fantaclub", "consegna", { nl: lg ? lg.nl : "", lega: lg ? lg.nome : "", modo: "lega_fle", circuito: circuito },
+    var id = inviaPassaggio("fantaclub", "consegna", { nl: lg ? lg.nl : "", lega: lg ? lg.nome : "", modo: modoFc, modoAuto: modoFc === "solo_lega", circuito: circuito },
       lg ? "/servlet/ConsegnaFormazione?_nl=" + encodeURIComponent(lg.nl) : "/");
     if (!id) { togliApertura(); avviso("Impossibile aprire Fantaclub"); log("FANTACLUB CONSEGNA", "passaggio non partito"); return; }
     sScrivi("fc_consegna_attesa", { id: id, at: Date.now() });
@@ -3088,6 +4277,53 @@
     if (!l || !NL_VALIDO.test(l)) return { ok: false, motivo: "non_verificata", testo: "Lega Fantaclub non ancora verificata: apri la pagina Consegna della tua lega. Nessun flusso FLE avviato." };
     if (!inCircuitoFc(l)) return { ok: false, motivo: "fuori", lega: nomeLegaFc(l), testo: "Questa lega non appartiene al circuito FLE. La formazione non può essere inviata a FLE." };
     return { ok: true, lega: nomeLegaFc(l) };
+  }
+  // PROVA12 A1: squadra FLE ATTESA per SOLO FLE / MODIFICA SU FLE da Fantaclub = squadra FLE abbinata alla squadra Fantaclub
+  // della lega (formazione LEGA + FLE o SOLO LEGA letta dalla pagina Consegna, abbinamento lega + squadra + ID FLE valido).
+  // Senza abbinamento la squadra non e verificabile: nessuna operazione FLE (SOLO LEGA resta sempre disponibile).
+  function fleAttesoFc(nl) {
+    var l = nl === undefined ? ((legaFc() || {}).nl || "") : String(nl || "");
+    var cand = [leggi("fc_ultima", null), leggi("fc_solo_lega", null)].filter(function (c) { return c && abbinamentoFcValido(c) && (!l || String(c.nl).toLowerCase() === l.toLowerCase()); })[0];
+    if (!cand) return { ok: false, motivo: "senza_squadra", testo: "Squadra FLE non verificabile: prima consegna la formazione con FAI O MODIFICA LA FORMAZIONE e scegli la tua squadra Fantaclub. Nessuna operazione su FLE; la formazione preparata resta com'è e SOLO LEGA resta disponibile." };
+    return { ok: true, fleTid: Number(cand.fleTid), squadra: String(cand.squadra || ""), lega: cand.lega || nomeLegaFc(cand.nl) };
+  }
+  // SOLO FLE / MODIFICA SU FLE da Fantaclub: lega verificata nel circuito FLE + squadra FLE attesa nota
+  function ammessoCampoFleFc(nl) {
+    var es = fleFantaclubAmmesso(nl);
+    if (!es.ok) return es;
+    if (!identitaAttuale()) return { ok: false, motivo: "identita", testo: testoIdentita() }; // 1.3.5-RC: il campo FLE sta su Leghe Fantacalcio
+    var at = fleAttesoFc(nl);
+    return at.ok ? { ok: true, lega: es.lega, fleTid: at.fleTid, squadra: at.squadra } : at;
+  }
+  // PROVA12 A1: salvataggio sulla pagina FLE con Fantaclub in SOLO FLE / MODIFICA SU FLE (non l'invio di FVM, che ha i suoi
+  // controlli): ammesso SOLO se la formazione che il sito sta salvando e della squadra FLE attesa. Ritorna il motivo del blocco
+  // ("" = ammesso). La pagina NON viene chiusa: la formazione preparata resta sulla pagina, il salvataggio non parte.
+  function bloccoSalvataggioFc(o) {
+    if (!suFle() || window.__fvmInvio || piattaformaScelta() !== "fantaclub" || leggi("modo", "lega_fle") !== "solo_fle") return "";
+    var at = fleAttesoFc(), tid = Number(o && o.tid || ctl.payload && ctl.payload.tid || 0);
+    if (!at.ok) return at.testo;
+    if (!tid) return "Squadra della formazione FLE non leggibile: salvataggio NON eseguito. La formazione resta sulla pagina; ricarica la pagina e riprova.";
+    if (tid !== at.fleTid) return "Su FLE questo account sta salvando la squadra " + tid + ", non la tua (" + at.squadra + ", squadra FLE " + at.fleTid + "): salvataggio NON eseguito. Entra in Leghe Fantacalcio con l'account della tua squadra FLE.";
+    return "";
+  }
+  // PROVA12 A1: sulla pagina formazione FLE (SOLO FLE / MODIFICA SU FLE da Fantaclub) squadra diversa o non verificabile =
+  // avviso chiaro e salvataggi bloccati (bloccoSalvataggioFc). Nessuna chiusura della pagina, nessun cambio di modalita.
+  function guardiaCampoFleFc() {
+    if (!suFle() || !suFormazione() || sLeggi("task") || window.__fvmInvio || piattaformaScelta() !== "fantaclub" || leggi("modo", "lega_fle") !== "solo_fle") return false;
+    var pl = ctl.payload;
+    if (!pl || !pl.tid) return false;
+    var at = fleAttesoFc();
+    if (at.ok && Number(pl.tid) === at.fleTid) { sScrivi("fc_guardia", null); return false; }
+    var testo = at.ok ? "Su FLE questo account mostra la squadra " + pl.tid + ", non la tua (" + at.squadra + ", squadra FLE " + at.fleTid + "): FVM blocca il salvataggio. La pagina resta aperta e nulla viene salvato; entra con l'account della tua squadra FLE. SOLO LEGA resta disponibile."
+      : at.testo;
+    var prima = sLeggi("fc_guardia");
+    sScrivi("fc_guardia", { at: Date.now(), atteso: at.ok ? at.fleTid : 0, letto: Number(pl.tid), comp: Number(pl.comp || 0), testo: testo });
+    if (!prima || Number(prima.letto) !== Number(pl.tid)) {
+      log("GUARDIA FLE", { piattaforma: "fantaclub", atteso: at.ok ? at.fleTid : 0, letto: Number(pl.tid), comp: pl.comp, esito: "salvataggio bloccato, pagina aperta" });
+      try { var mF = sLeggi("storico_modifica"); storicoBloccato(mF && Date.now() - Number(mF.at || 0) < 2 * 3600000 ? "modifica_fle" : "solo_fle", (legaFc() || {}).nl || "", at.ok ? "squadra FLE diversa (" + pl.tid + " invece di " + at.fleTid + ")" : "squadra FLE non verificabile"); } catch (e) {}
+      avviso(testo, true); // una volta per squadra letta; a ogni tentativo di salvataggio l'avviso si ripete
+    }
+    return true;
   }
   // RIPETI CONTROLLO FLE con Fantaclub: lega selezionata, nel circuito FLE, formazione completa di QUELLA lega con
   // abbinamento valido (lega + squadra + ID FLE). Solo visibilita: i blocchi di controllo/invio restano quelli di sempre.
@@ -3135,6 +4371,8 @@
     if (fl.fonte === "fantaclub" && Number(fl.tid || 0) && Number(fl.tid) !== f.fleTid) scrivi("fle", { stato: "attesa", fonte: "fantaclub" });
     log("FANTACLUB SQUADRA", { scelta: t[1], fleTid: f.fleTid, come: "scelta utente" });
   }
+  // PROVA12: limite sicuro di lettura della panchina Fantaclub (e della panchina registrata nello storico)
+  function panchinaFcMax() { return 30; }
   // fase 6: formazione letta su Fantaclub (passaggio "formazione"). Solo nomi, squadre (3 lettere) e stato.
   function riceviFormazioneFc(d) {
     sScrivi("apri", "main");
@@ -3153,13 +4391,16 @@
       sScrivi("flash", (consegna ? "Consegna fatta su Fantaclub ✓, ma " : "") + "formazione non letta");
       return;
     }
-    var pulisci = function (arr) {
-      return (Array.isArray(arr) ? arr : []).slice(0, 15).map(function (p) {
+    // PROVA12: panchina Fantaclub fino a 30 (prima 15: dal 16° panchinaro in poi i giocatori venivano scartati); oltre: diagnosi
+    var pulisci = function (arr, max) {
+      max = max || 15;
+      if (Array.isArray(arr) && arr.length > max) log("FANTACLUB FORMAZIONE", { avviso: "giocatori oltre il limite di lettura", letti: max, nellaPagina: arr.length });
+      return (Array.isArray(arr) ? arr : []).slice(0, max).map(function (p) {
         return { n: String(p && p.n || "").slice(0, 40), c: String(p && p.c || "").replace(/[^A-Za-z]/g, "").slice(0, 3).toUpperCase(), s: String(p && p.s || "").replace(/[^A-Za-z]/g, "").slice(0, 2).toUpperCase(), o: !!(p && p.o) };
       }).filter(function (p) { return p.n; });
     };
     var f = { at: Date.now(), come: consegna ? "consegna" : "lettura", nl: nl, lega: nl ? nomeLegaFc(nl) : "", modulo: String(d.modulo || "").replace(/\D/g, "").slice(0, 3),
-      titolari: pulisci(d.titolari), panchina: pulisci(d.panchina), idSquadra: String(d.idSquadra || "").replace(/\D/g, "").slice(0, 12),
+      titolari: pulisci(d.titolari), panchina: pulisci(d.panchina, panchinaFcMax()), idSquadra: String(d.idSquadra || "").replace(/\D/g, "").slice(0, 12),
       viste: (Array.isArray(d.squadreViste) ? d.squadreViste : []).map(String).slice(0, 10) };
     var testo = function (l) { return l.map(function (p) { return p.n + (p.c ? " " + p.c : "") + (p.s ? " (" + p.s + ")" : ""); }).join(", "); };
     log("FANTACLUB FORMAZIONE", { come: f.come, modo: d.modo, lega: f.lega || "non riconosciuta", circuito: inCircuitoFc(nl) ? "FLE" : "fuori", modulo: f.modulo, titolari: f.titolari.length, panchina: f.panchina.length });
@@ -3244,7 +4485,11 @@
         Object.keys(n).forEach(function (k) { if (n[k] === undefined || n[k] === "") delete n[k]; });
         if (!d) { op.destinazioni[dest] = n; return; }
         if (d.esito === "confermata") {
-          if (n.esito === "confermata") { d.conferme = Number(d.conferme || 1) + 1; d.ultimaConferma = ora; }
+          if (n.esito === "confermata") {
+            d.conferme = Number(d.conferme || 1) + 1; d.ultimaConferma = ora;
+            // PROVA11: ogni invio ripetuto conservato (ora, risposta, Switch della risposta); la prima consegna resta com'era
+            d.invii = (Array.isArray(d.invii) ? d.invii : [{ at: Number(d.at) || 0, prova: d.prova || "" }]).concat([{ at: ora, prova: n.prova || "", switch: n.switch && n.switch.stato ? n.switch.stato + (n.switch.a ? " " + n.switch.a + "-" + n.switch.b : "") : undefined }]).slice(-10);
+          }
           else if (n.esito === "errore" || n.esito === "non_verificata" || n.esito === "bloccata") d.tentativi = (d.tentativi || []).concat([{ at: ora, esito: n.esito, motivo: n.motivo || "" }]).slice(-5);
           return;
         }
@@ -3288,6 +4533,171 @@
   }
   // S2: giornata della COMPETIZIONE (cmday del salvataggio), distinta dalla giornata di Serie A (mday)
   function storicoGiornataComp(o) { return o && Number(o.cmday) > 0 ? Number(o.cmday) : undefined; }
+  // PROVA9 · GIORNATE (verificato con l'invio reale del 20/10: mday 3 = giornata della competizione FLE, cmday 8 = Serie A;
+  // ricognizione 9/10: lega mday 3, cmday 6 = league/status.mday). Voci nuove (schemaGiornate 2): giornataSA nella voce,
+  // giornataComp in ogni destinazione. Voci precedenti: la giornata delle destinazioni era cmday (Serie A, valore certo);
+  // quella della voce era ambigua (mday della lega oppure di FLE): mostrata cosi com'e, mai rinumerata.
+  function storicoGiornataSerieA(o) { return o && Number(o.cmday) > 0 ? Number(o.cmday) : undefined; }
+  function storicoGiornataCompetizione(o) { return o && Number(o.mday) > 0 ? Number(o.mday) : undefined; }
+  function storicoSerieA(x) {
+    if (!x) return 0;
+    if (x.schemaGiornate === 2) return Number(x.giornataSA) || 0;
+    var d = x.destinazioni || {};
+    return Number((d.lega && d.lega.giornata) || (d.fle && d.fle.giornata) || 0) || 0;
+  }
+  // PROVA9 · SWITCH della consegna: i valori di QUELLA consegna (mai sostituiti da uno successivo). In campo / in panchina
+  // dalla formazione della consegna (mai dedotto da swtcA/swtcB); swtcMdl mostrato come «Modulo indicato con lo SWITCH».
+  function storicoSwitch(sw, tit, pan, fonte) {
+    if (!sw) return undefined;
+    var s = { stato: sw.stato === "presente" || sw.stato === "assente" ? sw.stato : "sconosciuto", fonte: String(fonte || sw.fonte || "") };
+    if (s.stato !== "presente") return s;
+    var t = (tit || []).map(Number), p = (pan || []).map(Number), nomeDi = function (pid) { var x = info[pid]; return x && x.n ? String(x.n).slice(0, 40) : ""; };
+    s.a = Number(sw.a) || 0; s.b = Number(sw.b) || 0; s.nomeA = nomeDi(s.a); s.nomeB = nomeDi(s.b); s.mdl = fvmSwModulo(sw.valori && sw.valori.swtcMdl);
+    if (t.indexOf(s.a) >= 0 && p.indexOf(s.b) >= 0) { s.inCampo = s.a; s.inPanchina = s.b; }
+    else if (t.indexOf(s.b) >= 0 && p.indexOf(s.a) >= 0) { s.inCampo = s.b; s.inPanchina = s.a; }
+    return s;
+  }
+  function storicoSwitchUguale(x, y) { return !!(x && y && x.stato === y.stato && (x.stato !== "presente" || (x.a === y.a && x.b === y.b && x.mdl === y.mdl))); }
+  function storicoSwitchRighe(s) {
+    if (!s || s.stato === "assente") return [];
+    if (s.stato !== "presente") return ["Switch: " + DATO_ND];
+    var nome = function (pid) { return (pid === s.a ? s.nomeA : s.nomeB) || "#" + pid; }, r = [];
+    if (s.inCampo) { r.push("In campo: " + nome(s.inCampo)); r.push("In panchina: " + nome(s.inPanchina)); }
+    else r.push("Giocatori: " + nome(s.a) + " ↔ " + nome(s.b) + " (posizione in formazione non registrata)");
+    if (s.mdl && s.mdl.length >= 3) r.push("Modulo indicato con lo SWITCH: " + s.mdl.split("").join("-"));
+    if (s.verifica) r.push(s.verifica === "ok" ? "Verificato su FLE ✓" : s.verifica === "diverso" ? "Su FLE risulta diverso da quello inviato" : "Verifica su FLE non riuscita");
+    return r;
+  }
+  // blocco SWITCH CONSEGNATO sotto la panchina: uno solo se Lega e FLE coincidono, altrimenti LEGA e FLE separati; voci
+  // precedenti: "non registrato" solo dentro FORMAZIONE (fuori = true: nulla, per non riempire lo storico)
+  function storicoSwitchHtml(x, fuori) {
+    if (!x || x.schemaGiornate !== 2) return fuori ? "" : "<div class='mu' style='margin-top:6px;font-size:12px'>Switch: non registrato (voce di una versione precedente di FVM)</div>";
+    var d = x.destinazioni || {}, sL = d.lega && d.lega.switch, sF = d.fle && d.fle.switch, vF = d.fle && d.fle.switchVerifica;
+    if (sF && (vF === "ok" || vF === "diverso" || vF === "non_letto")) sF = Object.assign({}, sF, { verifica: vF });
+    var blocco = function (titolo, s) { var r = storicoSwitchRighe(s); return r.length ? "<div style='margin-top:8px'><div class='lb' style='font-size:11px'>" + esc(titolo) + "</div>" + r.map(function (t) { return "<div class='mu'>" + esc(t) + "</div>"; }).join("") + "</div>" : ""; };
+    // RC3 (come Android): la destinazione è sempre scritta (lo Switch della lega non è «consegnato» anche su FLE)
+    if (sL && sF && storicoSwitchUguale(sL, sF)) return blocco("SWITCH CONSEGNATO IN LEGA E SU FLE", sF);
+    return blocco("SWITCH CONSEGNATO IN LEGA", sL) + blocco("SWITCH CONSEGNATO SU FLE", sF);
+  }
+  // competizioni FLE della consegna: istantanea (iscritte, coinvolte dal comando) + esito individuale della rilettura
+  function storicoCompetizioniHtml(e) {
+    var ist = Array.isArray(e && e.competizioniFle) ? e.competizioniFle : null, ver = Array.isArray(e && e.competizioniVerifica) ? e.competizioniVerifica : null;
+    if (!ist && !ver) return "";
+    var perId = {}, elenco = (ist || []).slice();
+    (ver || []).forEach(function (r) { perId[r.id] = r; if (!elenco.some(function (c) { return c.id === r.id; })) elenco.push(r); });
+    var ESITI = { verificata: ["VERIFICATA ✓", "#4ade80"], diversa: ["DIVERSA", "#f87171"], da_verificare: ["DA VERIFICARE", "#fbbf24"], senza_turno: ["SENZA TURNO", "#aab3c2"], classifica: ["CLASSIFICA (nessuna formazione)", "#aab3c2"] };
+    var coinv = elenco.filter(function (c) { return c.coinvolta; }).length, verif = elenco.filter(function (c) { return perId[c.id] && perId[c.id].esito === "verificata"; }).length;
+    var h = "<div class='mu' style='font-size:12px;margin-top:2px'>Competizioni FLE · iscritte: " + elenco.length + " · coinvolte dal comando: " + coinv + " · verificate: " + (ver ? verif : "verifica individuale non eseguita") + "</div>";
+    elenco.forEach(function (c) {
+      var r = perId[c.id], es = r ? ESITI[r.esito] || [String(r.esito || "").toUpperCase(), "#aab3c2"] : c.natura === "ranking" ? ESITI.classifica : ["NON VERIFICATA", "#aab3c2"];
+      var giorn = r && r.esito === "verificata" && Number(r.giornata) > 0 ? " · " + Number(r.giornata) + "ª giornata FLE" : "";
+      var dett = r && r.esito === "diversa" && r.differenze ? ": " + r.differenze.join(", ") : r && r.esito !== "verificata" && r.motivo ? ": " + r.motivo : c.nota ? ": " + c.nota : "";
+      if (r && r.ultima) dett += " · ultima lettura " + storicoData(r.ultima.at) + ": " + String(r.ultima.esito || "").replace("_", " ") + (r.ultima.motivo ? " (" + r.ultima.motivo + ")" : ""); // PROVA11
+      h += "<div style='font-size:12px;margin-top:2px'>• <span style='color:#e8edf5'>" + esc((c.nome || "competizione " + c.id) + (c.ingresso ? " (ingresso)" : "") + giorn) + "</span> · <span style='color:" + es[1] + ";font-weight:800'>" + esc(es[0]) + "</span><span class='mu'>" + esc(dett) + "</span></div>";
+    });
+    return h;
+  }
+  // PROVA9 · ISTANTANEA delle competizioni FLE note al momento dell'invio (elenco competizioni del sito, nessun nome fisso):
+  // iscritte = la squadra e tra le squadre della competizione; coinvolte dal comando SALVA PER TUTTE = iscritte, attive,
+  // non classifiche (Ranking). L'esito individuale arriva solo dalla rilettura (verificaCompetizioniFle).
+  function storicoCompetizioniFle(comps, fleTid, ingresso) {
+    if (!Array.isArray(comps) || !comps.length || !Number(fleTid)) return undefined;
+    var out = [];
+    comps.forEach(function (c) {
+      if (!c || !Number(c.id) || c.del) return;
+      var tm = Array.isArray(c.tmids) ? c.tmids.map(Number) : null;
+      if (!tm || tm.indexOf(Number(fleTid)) < 0) return;
+      var nat = naturaCompetizione(c);
+      out.push({ id: Number(c.id), nome: String(c.name || c.nome || c.id).slice(0, 60), natura: nat, coinvolta: nat === "obbligo", ingresso: Number(c.id) === Number(ingresso) });
+    });
+    return out.length ? out : undefined;
+  }
+  // PROVA10 · CRITERIO DETERMINISTICO delle voci, mai l'ora (la PROVA9 confondeva o duplicava le voci secondo il millisecondo):
+  //  - "posto" = destinazione della consegna: LEGA = lega, modalita, squadra, competizione, giornata di Serie A e della
+  //    competizione; FLE = squadra FLE, competizione d'ingresso e giornate (comune a invii FVM, SOLO FLE e MODIFICA SU FLE);
+  //  - "impronta" = modulo, titolari, panchina IN ORDINE e Switch;
+  //  - una consegna e un DOPPIONE (= conferma della stessa voce) solo con lo stesso posto, la stessa impronta e lo stesso tipo
+  //    di operazione dell'ULTIMA consegna di quel posto, stabilita dal numero d'ordine crescente "seq" (non dall'ora):
+  //    A → B → B unisce la seconda B, A → B → A crea una voce nuova (cronologia conservata). Voci precedenti (senza posto):
+  //    mai unite, mai modificate. Identificativi delle voci nuove con il numero d'ordine: mai uguali per caso.
+  function storicoProssimoSeq() { var n = (Number(leggi("storico_seq", 0)) || 0) + 1; scrivi("storico_seq", n); return n; }
+  function storicoImprontaConsegna(modulo, tit, pan, sw) {
+    return fvmSwModulo(modulo) + "|" + (tit || []).map(Number).join(",") + "|" + (pan || []).map(Number).join(",") + "|S:" + (sw ? fvmSwImpronta(sw) : "?");
+  }
+  function storicoPostoLega(slug, modo, tid, comp, o) { return ["L", String(slug || "").toLowerCase(), String(modo || ""), Number(tid) || 0, Number(comp) || 0, storicoGiornataSerieA(o) || "?", storicoGiornataCompetizione(o) || "?"].join("|"); }
+  function storicoPostoFle(fleTid, comp, o) { return ["F", Number(fleTid) || 0, Number(comp) || 0, storicoGiornataSerieA(o) || "?", storicoGiornataCompetizione(o) || "?"].join("|"); }
+  function storicoUltimaDelPosto(dest, posto) {
+    var best = null;
+    storicoTutto().forEach(function (x) { var d = x.destinazioni && x.destinazioni[dest]; if (d && d.posto === posto && Number(d.seq) > 0 && (!best || Number(d.seq) > Number(best.d.seq))) best = { x: x, d: d }; });
+    return best;
+  }
+  // PROVA9 · aggiunge dati a una destinazione di una voce gia registrata (verifiche arrivate dopo l'esito), senza toccare
+  // l'esito e senza contare una conferma in piu (storicoAggiorna conterebbe una conferma ripetuta)
+  function storicoArricchisci(id, dest, campi) {
+    try {
+      if (!id || !dest || !campi) return null;
+      var lista = storicoTutto(), op = lista.filter(function (x) { return x.id === id; })[0];
+      if (!op) return null;
+      op.destinazioni = op.destinazioni || {};
+      var d = op.destinazioni[dest] = op.destinazioni[dest] || {};
+      Object.keys(campi).forEach(function (k) { if (campi[k] !== undefined) d[k] = campi[k]; });
+      op.aggiornato = Date.now();
+      storicoSalva(lista);
+      log("STORICO", { op: op.id, arricchita: dest, campi: Object.keys(campi) });
+      return op;
+    } catch (e) { return null; }
+  }
+  // PROVA11 · VERIFICHE della consegna FLE: ogni verifica (dopo l'invio, dopo un invio ripetuto, RIPROVA VERIFICA) si
+  // AGGIUNGE all'elenco "verifiche" (ultime 10); l'esito di riferimento non passa mai da «ok» a «non_letto» (una lettura
+  // fallita non cancella una verifica riuscita); una competizione gia verificata resta tale se la nuova lettura non riesce.
+  // Voci registrate dalla PROVA9/10: la verifica gia presente diventa la prima dell'elenco, senza inventare dati.
+  function storicoVerificaAggiungi(id, rSw, rComp, tipo) {
+    try {
+      if (!id || (!rSw && !rComp)) return null;
+      var lista = storicoTutto(), op = lista.filter(function (x) { return x.id === id; })[0];
+      if (!op) return null;
+      op.destinazioni = op.destinazioni || {};
+      var d = op.destinazioni.fle = op.destinazioni.fle || {}, ora = Date.now();
+      var breve = function (l) { return (l || []).map(function (c) { return { id: Number(c.id) || 0, nome: String(c.nome || "").slice(0, 60), esito: c.esito, motivo: c.motivo ? String(c.motivo).slice(0, 100) : undefined }; }); };
+      if (!Array.isArray(d.verifiche)) {
+        d.verifiche = [];
+        if (d.switchVerifica || Array.isArray(d.competizioniVerifica)) d.verifiche.push({ at: Number(d.verificaAt) || 0, tipo: "registrata da una versione precedente", conferma: 1, switch: d.switchVerifica, competizioni: Array.isArray(d.competizioniVerifica) ? breve(d.competizioniVerifica) : undefined });
+      }
+      d.verifiche.push({ at: ora, tipo: String(tipo || "verifica"), conferma: Number(d.conferme) || 1, switch: rSw ? rSw.esito : undefined, motivo: rSw && rSw.motivo ? String(rSw.motivo).slice(0, 100) : undefined,
+        tentativi: rSw && Number(rSw.tentativi) || undefined, competizioni: rComp ? breve(rComp) : undefined });
+      d.verifiche = d.verifiche.slice(-10);
+      if (rSw && (rSw.esito === "ok" || rSw.esito === "diverso" || !d.switchVerifica || d.switchVerifica === "non_letto")) d.switchVerifica = rSw.esito;
+      if (rComp && rComp.length) {
+        var prec = Array.isArray(d.competizioniVerifica) ? d.competizioniVerifica : [];
+        var definitivo = function (e) { return ["verificata", "diversa", "senza_turno", "classifica"].indexOf(e) >= 0; };
+        var nuove = rComp.map(function (c) {
+          var p = prec.filter(function (x) { return Number(x.id) === Number(c.id); })[0];
+          if (p && definitivo(p.esito) && !definitivo(c.esito)) return Object.assign({}, p, { ultima: { at: ora, esito: c.esito, motivo: c.motivo ? String(c.motivo).slice(0, 100) : undefined } });
+          return c;
+        });
+        prec.forEach(function (p) { if (!nuove.some(function (x) { return Number(x.id) === Number(p.id); })) nuove.push(p); });
+        d.competizioniVerifica = nuove;
+      }
+      d.verificaAt = ora;
+      op.aggiornato = ora;
+      storicoSalva(lista);
+      log("STORICO", { op: op.id, verifica: tipo || "", switch: rSw ? rSw.esito : "", competizioni: rComp ? rComp.length : 0, verifiche: d.verifiche.length });
+      return op;
+    } catch (e) { return null; }
+  }
+  // PROVA11: righe delle verifiche di una consegna FLE (storico): esito di riferimento + ultima verifica se diversa + elenco
+  function storicoVerificheHtml(e) {
+    var v = e && Array.isArray(e.verifiche) ? e.verifiche : null;
+    if (!v || !v.length) return "";
+    var testo = function (x) {
+      var sw = x.switch === "ok" ? "Switch verificato ✓" : x.switch === "diverso" ? "Switch DIVERSO" : x.switch === "non_letto" ? "Switch non verificabile" + (x.motivo ? " (" + x.motivo + ")" : "") : "";
+      var c = Array.isArray(x.competizioni) ? x.competizioni.filter(function (k) { return k.esito === "verificata"; }).length + "/" + x.competizioni.length + " competizioni verificate" : "";
+      return [Number(x.at) ? storicoData(x.at) : "", x.tipo, x.conferma > 1 ? "consegna confermata " + x.conferma + " volte" : "", sw, c].filter(Boolean).join(" · ");
+    };
+    var h = "<div class='mu' style='font-size:12px;margin-top:4px'>Verifiche su FLE (sola lettura): " + v.length + "</div>";
+    v.slice().reverse().forEach(function (x, i) { h += "<div class='mu' style='font-size:12px'>" + (i === 0 ? "• ultima: " : "• ") + esc(testo(x)) + "</div>"; });
+    return h;
+  }
   function storicoImpronta(modulo, tit, pan) { return String(modulo || "") + "|" + (tit || []).join(",") + "|" + (pan || []).join(","); }
   // messaggio leggibile della risposta (solo i campi di testo "message"/"error", mai intestazioni o altri dati)
   function storicoMessaggio(testo) {
@@ -3318,10 +4728,12 @@
       if (!dati || dati.tipo === "fle") return; // invio FLE fatto da FVM: lo registra fineInvio
       var o = null; try { o = trovaFormazione(JSON.parse(dati.corpo || "null"), 0); } catch (e) {}
       var giornata = o && Number(o.mday) > 0 ? Number(o.mday) : 0;
-      var tit = (dati.titolari || []).slice(0, 11), pan = (dati.panchina || []).slice(0, 15);
+      var tit = (dati.titolari || []).slice(0, 11), pan = (dati.panchina || []).slice(0, panchinaFcMax()); // PROVA12: prima 15
       var t = storicoNomiLeghe(tit), p = storicoNomiLeghe(pan);
       var formazione = t && p ? { titolari: t, panchina: p } : undefined;
       var imp = storicoImpronta(dati.modulo, tit, pan), comp = Number(dati.comp || 0);
+      // PROVA9: stessa formazione con uno Switch diverso = consegna diversa (voce separata, Switch di ciascuna conservato)
+      if (dati.sw && dati.sw.stato !== "sconosciuto") imp += "|S:" + fvmSwImpronta(dati.sw);
       if (dati.suFle) {
         var mod = sLeggi("storico_modifica");
         var modalita = mod && Date.now() - Number(mod.at || 0) < 2 * 3600000 ? "modifica_fle" : "solo_fle";
@@ -3331,11 +4743,18 @@
         esito.competizioni = comp ? [{ id: comp, nome: String(nomeComp).slice(0, 60) }] : undefined;
         if (o && "allComp" in o) esito.tutte = o.allComp === true || o.allComp === 1;
         if (o && "visb" in o) esito.invisibile = o.visb === false || o.visb === 0;
-        esito.giornata = storicoGiornataComp(o);
-        var precF = storicoRecente(function (x) { return x.modalita === modalita && x.impronta === imp; });
-        storicoAggiorna(precF ? precF.id : "fle-" + dati.at, { piattaforma: piattaformaScelta(), modalita: modalita, lega: { id: FLE_SLUG, nome: "FANTALEGAEUROPA (FLE)" }, legaOrigine: storicoLegaOrigineFle(dati.tid),
-          squadra: { nome: sq ? sq[1] : String(f.squadra || ""), fleTid: Number(dati.tid) || 0 }, modulo: String(dati.modulo || ""), giornata: giornata || Number(f.mday) || 0, impronta: imp, formazione: formazione },
+        // PROVA9: giornata della competizione FLE (mday) e Switch salvato a mano con la pagina ufficiale FLE
+        esito.giornataComp = storicoGiornataCompetizione(o);
+        esito.switch = storicoSwitch(dati.sw, tit, pan, "salvataggio FLE");
+        // PROVA10: stessa voce solo se e la stessa consegna dell'ULTIMA dello stesso posto FLE (criterio deterministico)
+        var postoF = storicoPostoFle(dati.tid, comp, o), impF = storicoImprontaConsegna(dati.modulo, tit, pan, dati.sw), seqF = storicoProssimoSeq();
+        var ultF = storicoUltimaDelPosto("fle", postoF), precF = ultF && ultF.d.impronta === impF && ultF.x.modalita === modalita ? ultF.x : null;
+        var idF = precF ? precF.id : "fle-" + dati.at + "-" + seqF;
+        storicoAggiorna(idF, { piattaforma: piattaformaScelta(), modalita: modalita, lega: { id: FLE_SLUG, nome: "FANTALEGAEUROPA (FLE)" }, legaOrigine: storicoLegaOrigineFle(dati.tid),
+          squadra: { nome: sq ? sq[1] : String(f.squadra || ""), fleTid: Number(dati.tid) || 0 }, modulo: String(dati.modulo || ""), schemaGiornate: 2, giornataSA: storicoGiornataSerieA(o), impronta: imp, formazione: formazione,
+          ordine: precF ? undefined : seqF },
           { lega: { esito: "non_prevista", motivo: modalita === "solo_fle" ? "SOLO FLE" : "modifica della sola formazione FLE" }, fle: esito });
+        storicoArricchisci(idF, "fle", { posto: postoF, impronta: impF, seq: seqF });
         return;
       }
       var slug = String(dati.lega || ""), solo = leggi("modo", "lega_fle") === "solo_lega", modo = solo ? "solo_lega" : "lega_fle";
@@ -3343,20 +4762,28 @@
       var pzS = partecipantiLega(slug), psS = pzS && pzS[Number(dati.tid)];
       var nomeCompL = (leggi("comps_" + slug, []).filter(function (c) { return Number(c.id) === comp; })[0] || {}).name || "";
       lega.competizioni = comp ? [{ id: comp, nome: String(nomeCompL).slice(0, 60) }] : undefined;
-      lega.giornata = storicoGiornataComp(o);
+      // PROVA9: giornata della competizione di lega (mday) e Switch salvato nella lega con questa consegna
+      lega.giornataComp = storicoGiornataCompetizione(o);
+      lega.switch = storicoSwitch(dati.sw, tit, pan, "salvataggio nella lega");
       var fle = solo ? { esito: "non_prevista", motivo: "SOLO LEGA" }
         : lega.esito !== "confermata" ? { esito: "non_inviata", motivo: "la lega non ha confermato il salvataggio" }
         : map ? { esito: "non_inviata" } : { esito: "non_prevista", motivo: "squadra non nel circuito FLE" };
-      var prec = storicoRecente(function (x) { return x.piattaforma === "fantacalcio" && x.modalita === modo && x.lega && x.lega.id === slug && x.impronta === imp; });
-      storicoAggiorna(prec ? prec.id : "lg-" + dati.at, { piattaforma: "fantacalcio", modalita: modo, lega: { id: slug, nome: nomeLega(slug) },
-        squadra: { nome: map ? map.squadra : psS ? psS.nome : "", idSorgente: Number(dati.tid) || 0, fleTid: map ? map.fleTid : 0 }, modulo: String(dati.modulo || ""), giornata: giornata,
+      // PROVA10: stessa voce solo se e la stessa consegna dell'ULTIMA dello stesso posto di lega (criterio deterministico)
+      var postoL = storicoPostoLega(slug, modo, dati.tid, comp, o), impL = storicoImprontaConsegna(dati.modulo, tit, pan, dati.sw), seqL = storicoProssimoSeq();
+      var ultL = storicoUltimaDelPosto("lega", postoL), prec = ultL && ultL.d.impronta === impL && ultL.x.piattaforma === "fantacalcio" ? ultL.x : null;
+      var idL = prec ? prec.id : "lg-" + dati.at + "-" + seqL;
+      storicoAggiorna(idL, { piattaforma: "fantacalcio", modalita: modo, lega: { id: slug, nome: nomeLega(slug) }, ordine: prec ? undefined : seqL,
+        squadra: { nome: map ? map.squadra : psS ? psS.nome : "", idSorgente: Number(dati.tid) || 0, fleTid: map ? map.fleTid : 0 }, modulo: String(dati.modulo || ""), schemaGiornate: 2, giornataSA: storicoGiornataSerieA(o),
         account: psS && psS.allenatori && psS.allenatori.length ? { nome: psS.allenatori.join(", "), fonte: "allenatori della squadra (partecipanti della lega)" } : undefined,
         impronta: imp, formazione: formazione, rif: lega.esito === "confermata" && !solo ? "fantacalcio:" + dati.at : undefined }, { lega: lega, fle: fle });
+      storicoArricchisci(idL, "lega", { posto: postoL, impronta: impL, seq: seqL });
     } catch (e) { try { log("STORICO", { esito: "non registrato", errore: String(e && e.message || e).slice(0, 120) }); } catch (x) {} }
   }
   // esito dell'invio FLE fatto da FVM (PASSO 3 / CONFERMA E INVIA): stessa voce della consegna nella lega
-  function storicoInvioFle(ok, stato, testo) {
+  // PROVA9: extra = { inv: formazione inviata da FVM (con la decisione Switch), comps: elenco competizioni FLE della pagina }
+  function storicoInvioFle(ok, stato, testo, extra) {
     try {
+      extra = extra || {};
       var f = leggi("fle", {}) || {}, u = formazioneSorgente() || {};
       var piatt = u.fonte === "fantaclub" ? "fantaclub" : "fantacalcio", rif = piatt + ":" + Number(u.at || 0);
       var op = Number(u.at || 0) ? storicoTutto().filter(function (x) { return x.rif === rif; })[0] || null : null;
@@ -3366,15 +4793,39 @@
       esito.competizioni = Number(f.comp) ? [{ id: Number(f.comp), nome: String(f.compName || "").slice(0, 60) }] : undefined;
       // FVM salva sempre su tutte le competizioni, invisibile (riscriviPerFle)
       esito.tutte = true; esito.invisibile = true;
-      esito.giornata = storicoGiornataComp(f);
-      var base = { giornata: Number(f.mday) || 0 };
-      if (!op || !op.squadra || !op.squadra.nome) base.squadra = { nome: String(f.squadra || u.squadra || ""), fleTid: Number(f.tid) || 0 };
-      if (op && op.modalita === "solo_lega") { base.modalita = "lega_fle"; base.nota = "SOLO LEGA, poi MANDA ANCHE A FLE"; }
-      if (op) { storicoAggiorna(op.id, base, { fle: esito }); return; }
-      var sl = String(u.nl || legaCorrente() || "");
-      storicoAggiorna("fle-" + Date.now(), Object.assign(base, { piattaforma: piatt, modalita: "lega_fle", lega: sl ? { id: sl, nome: u.nl ? u.lega || nomeLegaFc(sl) : nomeLega(sl) } : undefined, modulo: String(u.modulo || "") }),
-        { lega: { esito: "non_registrata", motivo: "consegna nella lega non presente nello storico" }, fle: esito });
-    } catch (e) { try { log("STORICO", { esito: "non registrato", errore: String(e && e.message || e).slice(0, 120) }); } catch (x) {} }
+      // PROVA9: giornate e Switch dalla RISPOSTA del salvataggio FLE (cio che FLE ha registrato per la competizione
+      // d'ingresso); se la risposta non li ha, restano non registrati (mai presi da una lettura precedente)
+      var rs = null; try { rs = trovaFormazione(JSON.parse(testo || "null"), 0); } catch (e) { rs = null; }
+      if (rs && Number(rs.idcomp) && Number(f.comp) && Number(rs.idcomp) !== Number(f.comp)) rs = null;
+      esito.giornataComp = storicoGiornataCompetizione(rs);
+      var inv = extra.inv || {};
+      var swRs = rs ? fvmSwLeggi(rs, "risposta FLE") : null;
+      if ((!swRs || swRs.stato === "sconosciuto") && inv.sw && inv.sw.valori) swRs = fvmSwLeggi(Object.assign({ tid: f.tid, idcomp: f.comp }, inv.sw.valori, { swtcA: inv.sw.valori.swtcA, swtcB: inv.sw.valori.swtcB }), "scritto da FVM");
+      if (swRs) esito.switch = storicoSwitch(swRs, inv.starts || (rs ? (rs.starts || []).map(idDi) : []), inv.bench || (rs ? (rs.bench || []).map(idDi) : []), swRs.fonte);
+      // istantanea delle competizioni note ORA (elenco competizioni letto sulla pagina FLE): non cambia piu
+      var ist = storicoCompetizioniFle(extra.comps, Number(f.tid), Number(f.comp));
+      if (ist) { esito.competizioniFle = ist; esito.istantaneaAt = Date.now(); }
+      var base = { schemaGiornate: 2, giornataSA: storicoGiornataSerieA(rs) };
+      // PROVA10: scelta DETERMINISTICA della voce (mai l'ora). 1) primo invio a FLE della consegna di lega collegata -> quella
+      // voce; 2) stesso posto FLE, stessa impronta e stesso tipo dell'ULTIMO invio di quel posto -> conferma di quella voce;
+      // 3) altrimenti (Switch o formazione diversi, ritorno a una configurazione precedente) -> voce SEPARATA, le altre restano
+      var postoF = storicoPostoFle(Number(f.tid), Number(f.comp), rs);
+      var titF = rs && Array.isArray(rs.starts) ? rs.starts.map(idDi) : (inv.starts || []), panF = rs && Array.isArray(rs.bench) ? rs.bench.map(idDi) : (inv.bench || []);
+      var impF = storicoImprontaConsegna((rs && rs.mdl) || inv.mdl || u.modulo, titF, panF, swRs), seqF = storicoProssimoSeq();
+      var giaFle = op && op.destinazioni && op.destinazioni.fle && op.destinazioni.fle.esito === "confermata", dove = null;
+      if (op && !giaFle) dove = op;
+      else { var ultF = storicoUltimaDelPosto("fle", postoF); if (ultF && ultF.d.impronta === impF && ultF.x.modalita === "lega_fle") dove = ultF.x; }
+      if (!dove || !dove.squadra || !dove.squadra.nome) base.squadra = { nome: String(f.squadra || u.squadra || ""), fleTid: Number(f.tid) || 0 };
+      if (dove && dove.modalita === "solo_lega") { base.modalita = "lega_fle"; base.nota = "SOLO LEGA, poi MANDA ANCHE A FLE"; }
+      if (dove) { storicoAggiorna(dove.id, base, { fle: esito }); storicoArricchisci(dove.id, "fle", { posto: postoF, impronta: impF, seq: seqF }); return dove.id; }
+      var sl = String(u.nl || legaCorrente() || ""), id = "fle-" + Date.now() + "-" + seqF;
+      if (op) base.nota = "nuovo invio a FLE della stessa consegna di lega, con formazione o Switch diverso dall'invio precedente";
+      base.ordine = seqF;
+      storicoAggiorna(id, Object.assign(base, { piattaforma: piatt, modalita: "lega_fle", lega: sl ? { id: sl, nome: u.nl ? u.lega || nomeLegaFc(sl) : nomeLega(sl) } : undefined, modulo: String(u.modulo || "") }),
+        { lega: op ? { esito: "non_prevista", motivo: "consegna nella lega: vedi la voce precedente della stessa formazione" } : { esito: "non_registrata", motivo: "consegna nella lega non presente nello storico" }, fle: esito });
+      storicoArricchisci(id, "fle", { posto: postoF, impronta: impF, seq: seqF });
+      return id;
+    } catch (e) { try { log("STORICO", { esito: "non registrato", errore: String(e && e.message || e).slice(0, 120) }); } catch (x) {} return null; }
   }
   // consegna Fantaclub arrivata con il passaggio "formazione" (dopo riceviFormazioneFc). Solo "consegna" (pagina
   // "consegnata correttamente" vista su Fantaclub): una formazione soltanto letta (LEGGI) non crea voci.
@@ -3517,7 +4968,8 @@
     if (g === "l") { var l = storicoChiaveLega(x); return l ? [{ k: l, nome: storicoLegaNome(x), dove: PIATTAFORMA_STORICO[l.split("|")[0]] || "" }] : []; }
     if (g === "s") { var s = storicoChiaveSquadra(x); return s ? [{ k: s, nome: storicoSquadra(x), dove: storicoLegaNome(x) || DATO_ND }] : []; }
     if (g === "c") return storicoCompetizioni(x);
-    if (g === "g") return Number(x.giornata) > 0 ? [{ k: String(Number(x.giornata)), nome: "GIORNATA " + Number(x.giornata) + " SERIE A" }] : [];
+    // PROVA9: giornata di Serie A (cmday); il numero ambiguo delle voci precedenti non entra nel filtro
+    if (g === "g") return storicoSerieA(x) > 0 ? [{ k: String(storicoSerieA(x)), nome: "GIORNATA " + storicoSerieA(x) + " SERIE A" }] : [];
     return [];
   }
   function storicoFiltriScelti() {
@@ -3606,29 +5058,35 @@
         (soloFle ? storicoRiga("Lega di origine", storicoLegaOrigine(x)) : "") +
         storicoRiga("Account", storicoAccount(x)) +
         storicoRiga("Piattaforma", PIATTAFORMA_STORICO[x.piattaforma] || "") +
-        "<div class='mu'>" + esc(["stagione " + (x.stagione || storicoStagione(x.creato) || "?") + " (dalla data)", Number(x.giornata) > 0 ? "giornata " + Number(x.giornata) + " di Serie A" : ""].filter(Boolean).join(" · ")) + "</div>" +
+        // PROVA9: giornata di SERIE A (cmday); per le voci precedenti il numero ambiguo della voce resta senza attribuzione
+        "<div class='mu'>" + esc(["stagione " + (x.stagione || storicoStagione(x.creato) || "?") + " (dalla data)", storicoSerieA(x) ? storicoSerieA(x) + "ª giornata di Serie A" : "",
+          x.schemaGiornate !== 2 && Number(x.giornata) > 0 ? "giornata " + Number(x.giornata) + " (competizione non registrata)" : ""].filter(Boolean).join(" · ")) + "</div>" +
         (x.nota ? "<div class='mu'>" + esc(x.nota) + "</div>" : "");
       ["lega", "fle"].forEach(function (dest) {
         var e = d[dest];
         if (!e) return;
         var det = [];
-        if (Array.isArray(e.competizioni) && e.competizioni.length) det.push((dest === "fle" ? "ingresso: " : "") + e.competizioni.map(function (c) { return c.nome || "competizione " + c.id; }).join(", "));
-        if (Number(e.giornata) > 0) det.push("giornata " + Number(e.giornata) + " della competizione");
-        if (e.tutte === true) det.push("salvata per TUTTE LE COMPETIZIONI");
+        if (Array.isArray(e.competizioni) && e.competizioni.length) det.push((dest === "fle" ? "ingresso: " : "") + e.competizioni.map(function (c) { return c.nome || "competizione " + c.id; }).join(", ") +
+          (Number(e.giornataComp) > 0 ? " · " + Number(e.giornataComp) + "ª giornata" + (dest === "fle" ? " FLE" : "") : ""));
+        // PROVA9: le voci precedenti avevano qui la giornata di Serie A (gia mostrata sopra): nessuna riga ambigua
+        if (e.tutte === true) det.push(dest === "fle" ? "comando SALVA PER TUTTE LE COMPETIZIONI" : "salvata per TUTTE LE COMPETIZIONI");
         if (e.invisibile === true) det.push("INVISIBILE");
         if (e.motivo) det.push(e.motivo);
         if (e.prova) det.push("prova: " + e.prova);
         if (Number(e.conferme) > 1) det.push("confermata " + Number(e.conferme) + " volte (stessa formazione)");
+        if (Array.isArray(e.invii) && e.invii.length > 1) det.push("invii: " + e.invii.map(function (x) { return (Number(x.at) ? storicoData(x.at) : "prima consegna") + (x.prova ? " (" + x.prova + ")" : ""); }).join(" · ")); // PROVA11
         if (e.tentativi && e.tentativi.length) det.push(e.tentativi.length + (e.tentativi.length === 1 ? " tentativo non riuscito" : " tentativi non riusciti") + (e.esito === "confermata" ? "" : " prima"));
         h += "<div style='margin-top:6px;font-size:13px;font-weight:800'>" + storicoChip(dest === "lega" ? "LEGA" : "FLE", e, true) + "</div>" +
           (det.length ? "<div class='mu' style='font-size:12px'>" + esc(det.join(" · ")) + "</div>" : "");
+        if (dest === "fle") h += storicoCompetizioniHtml(e) + storicoVerificheHtml(e);
       });
       if (x.migrata) h += "<div class='mu' style='font-size:11px;margin-top:4px'>dalla versione precedente di FVM: i dati non registrati allora restano non disponibili</div>";
       if (x.formazione && x.formazione.titolari) {
         h += "<button class='bt' data-a='formazione_storico' data-i='" + i + "'>FORMAZIONE ▾</button><div id='fvm-sf-" + i + "' style='display:none;margin-top:6px'>" +
           "<div class='mu'><b>Titolari:</b> " + esc(x.formazione.titolari.join(", ")) + "</div>" +
-          (x.formazione.panchina && x.formazione.panchina.length ? "<div class='mu' style='margin-top:4px'><b>Panchina:</b> " + esc(x.formazione.panchina.join(", ")) + "</div>" : "") + "</div>";
-      }
+          (x.formazione.panchina && x.formazione.panchina.length ? "<div class='mu' style='margin-top:4px'><b>Panchina:</b> " + esc(x.formazione.panchina.join(", ")) + "</div>" : "") +
+          storicoSwitchHtml(x) + "</div>";
+      } else h += storicoSwitchHtml(x, true); // formazione non piu conservata (voci meno recenti): lo Switch resta visibile
       h += "</div>";
     });
     if (lista.length) h += "<button class='bt rosso' data-a='pulisci'>PULISCI " + (attivi ? "QUESTE " + lista.length + " VOCI" : "TUTTO LO STORICO") + "</button>";
@@ -3672,6 +5130,20 @@
   var AGG_URL = "https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/aggiornamento.json";
   var AGG_SCRIPT_URL = "https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js";
   var AGG_INTERVALLO_MS = 6 * 3600000;
+  // 1.3.5: novita di QUESTA versione, mostrate nel messaggio "aggiornamento completato" (stesse voci di aggiornamento.json)
+  function novitaVersione() {
+    // 1.3.5-RC: novita reali della 1.3.5 (PROVA7-PROVA15 + RC), in breve
+    return ["Account riconosciuto dal sito: verifica della squadra, Area Admin e dati FLE valgono solo per l'account collegato; cambiando account si riverifica (nulla viene cancellato).",
+      "VERIFICA SQUADRA FLE nella Home: LEGA + FLE, SOLO FLE e MODIFICA SU FLE solo con la squadra FLE verificata; SOLO LEGA funziona sempre.",
+      "SWITCH: scelta esplicita, verifica dopo il salvataggio, storico per giornata e competizione.",
+      "Confronto con i 25 FLE: moduli ammessi, rosa non conforme bloccata, esclusi dalla panchina con il motivo, scelte ricordate annullabili.",
+      "Fantaclub: guardia della squadra FLE, competizioni lette dal sito (campionati, punti, coppe), giornate reali, regola di mancata consegna e recupero automatico distinti dalla consegna.",
+      "Area Admin: sblocco valido solo in questa scheda e contesto, nessun controllo FLE automatico, dati FLE solo con il ruolo di amministratore confermato dal sito.",
+      "Consegne ufficiali per piattaforma (Leghe Fantacalcio o Fantaclub); l'altra piattaforma solo in una vista separata.",
+      "CAMBIA LEGA: leghe aperte solo dal tuo account; con Fantaclub, accesso diretto alla pagina Consegna.",
+      "Niente audio delle pagine durante le schermate e le letture di FVM; diagnosi più chiara.",
+      "Dopo un aggiornamento, anche fatto direttamente da Userscripts, compare una volta il riepilogo delle novità."];
+  }
   // confronto come Userscripts: componenti numerici separati da punti, mancanti = 0 ("1.3.4-LAN" vale 1.3.4)
   function aggConfronta(a, b) {
     var x = String(a || "").split("-")[0].split("."), y = String(b || "").split("-")[0].split(".");
@@ -3713,6 +5185,21 @@
       log("AGGIORNAMENTI", { esito: "completato", da: att.da, attiva: VERSIONE });
     } else if (Date.now() - Number(att.at || 0) > 7 * 86400000) scrivi("agg_attesa", null);
   }
+  // 1.3.5: versione usata l'ultima volta su questo iPhone. Se ora e attiva una versione PIU RECENTE (anche aggiornata
+  // direttamente dal menu di Userscripts, senza AGGIORNA ORA) il messaggio "aggiornamento completato" compare UNA volta.
+  // Prima installazione (nessun segno di uso precedente): nessun messaggio. Ritorno a una versione precedente: nessun messaggio.
+  function aggVersioneUsata() {
+    var vu = leggi("versione_usata", "");
+    if (vu === VERSIONE) return;
+    var comp = leggi("agg_completato", null), gia = !!(comp && aggConfronta(comp.a, VERSIONE) === 0);
+    // versioni fino alla 1.3.4 non registravano la versione: un uso precedente (dati di FVM) significa "arrivo da 1.3.4 o prima"
+    var usoPrima = !vu && aggConfronta(VERSIONE, "1.3.4") > 0 && ["benvenuto_ok", "lega_sorgente", "ultima", "fc_lega"].some(function (k) { return leggi(k, null) != null; });
+    if (!gia && ((vu && aggConfronta(VERSIONE, vu) > 0) || usoPrima)) {
+      scrivi("agg_completato", { da: vu || "", a: VERSIONE, at: Date.now(), come: "userscripts" });
+      log("AGGIORNAMENTI", { esito: "nuova versione attiva", da: vu || "1.3.4 o precedente", attiva: VERSIONE });
+    }
+    scrivi("versione_usata", VERSIONE);
+  }
   function aggStato() {
     var c = leggi("agg_info", null), d = c && c.dati, att = leggi("agg_attesa", null);
     var nuova = d && aggConfronta(d.versione, VERSIONE) > 0 ? d : null;
@@ -3720,17 +5207,27 @@
   }
   function aggRiquadro() {
     aggVerificaAttivo();
+    aggVersioneUsata();
     var ok = leggi("agg_completato", null);
     if (ok && aggConfronta(VERSIONE, ok.a) === 0) {
-      return "<div class='cd' style='border:2px solid #3fae4a'><div class='lb' style='color:#4ade80'>AGGIORNAMENTO COMPLETATO ✓</div>" +
-        "<div class='t2'>Fanta Vice Mister " + esc(VERSIONE) + " è attivo</div><div class='mu'>Versione precedente: " + esc(ok.da) + "</div>" +
+      // 1.3.5: UNA sola volta. Resta visibile per tutta la sessione di Safari in cui compare (la Home si ridisegna),
+      // poi non ricompare piu, anche senza OK.
+      if (!ok.mostrato) { ok.mostrato = Date.now(); scrivi("agg_completato", ok); sScrivi("agg_visto", ok.a); }
+      else if (sLeggi("agg_visto") !== ok.a) { scrivi("agg_completato", null); ok = null; }
+    }
+    var completato = "";
+    if (ok && aggConfronta(VERSIONE, ok.a) === 0) {
+      completato = "<div class='cd' style='border:2px solid #3fae4a'><div class='lb' style='color:#4ade80'>AGGIORNAMENTO COMPLETATO ✓</div>" +
+        "<div class='t2'>Fanta Vice Mister " + esc(VERSIONE) + " è attivo</div>" + (ok.da ? "<div class='mu'>Versione precedente: " + esc(ok.da) + "</div>" : "") +
+        (novitaVersione().length ? "<div class='mu' style='margin-top:6px'><b>Cosa cambia</b></div>" + novitaVersione().map(function (x) { return "<div class='mu'>• " + esc(x) + "</div>"; }).join("") : "") +
         "<button class='bt oro' data-a='agg_ok'>OK</button></div>";
     }
     var s = aggStato();
-    if (!s.nuova || (s.nonOra && !s.attesa)) return "";
+    // 1.3.5: un eventuale aggiornamento ancora piu recente resta visibile anche sotto il messaggio "completato"
+    if (!s.nuova || (s.nonOra && !s.attesa)) return completato;
     var d = s.nuova;
     var elenco = function (t, v) { return v.length ? "<div class='mu' style='margin-top:6px'><b>" + t + "</b></div>" + v.map(function (x) { return "<div class='mu'>• " + esc(x) + "</div>"; }).join("") : ""; };
-    return "<div class='cd' style='border:2px solid #e2b33c'><div class='lb' style='color:#e2b33c'>AGGIORNAMENTO DISPONIBILE</div>" +
+    return completato + "<div class='cd' style='border:2px solid #e2b33c'><div class='lb' style='color:#e2b33c'>AGGIORNAMENTO DISPONIBILE</div>" +
       "<div class='mu'>Versione installata: <b>" + esc(VERSIONE) + "</b></div>" +
       "<div class='mu'>Nuova versione: <b>" + esc(d.versione) + "</b>" + (d.data ? " · " + esc(d.data) : "") + "</div>" +
       (s.attesa ? "<div style='color:#fbbf24;margin-top:6px;font-size:13px'>La versione " + esc(d.versione) + " non è ancora attiva: completa i passi di AGGIORNA ORA, poi ricarica la pagina.</div>" : "") +
@@ -3786,6 +5283,40 @@
   function rigaGiocatore(num, p, extra) {
     return "<div class='riga' style='cursor:default'>" + (num ? "<span class='num on'>" + num + "</span>" : "") + badge(p.role || p.r) + "<span class='nm'>" + esc(p.name || p.n || "") + "</span>" + (extra || "") + "</div>";
   }
+  // PROVA13 decisione A: opzioni «Salva per tutte le competizioni» (allComp) e «Invisibile» (visb = false) del salvataggio fatto
+  // dall'utente nella sua lega, lette dal corpo reale della richiesta del sito. Assenti = non indicate (mai dedotte).
+  function opzioniLegaSalvate(u) {
+    var o = null; try { o = trovaFormazione(JSON.parse(u && u.corpo || "null"), 0); } catch (e) { o = null; }
+    if (!o) return null;
+    return { tutte: "allComp" in o ? (o.allComp === true || o.allComp === 1) : null, invisibile: "visb" in o ? (o.visb === false || o.visb === 0) : null };
+  }
+  // PROVA13 decisione A: riepilogo prima di CONFERMA E INVIA, LEGA e FLE separati. Nessuna scelta dell'utente viene cambiata:
+  // nella lega restano quelle salvate; su FLE FVM salva sempre per tutte le competizioni, invisibile (comportamento invariato).
+  function cartaRiepilogoSalvataggio(u) {
+    var sn = function (v) { return v === null || v === undefined ? "non indicato" : v ? "Sì" : "No"; };
+    var lega;
+    if (u && u.fonte === "fantaclub") lega = "consegna già fatta su Fantaclub (la visibilità delle formazioni è una regola della lega Fantaclub)";
+    else { var op = opzioniLegaSalvate(u); lega = op ? "Salva per tutte le competizioni: <b>" + sn(op.tutte) + "</b> · Invisibile: <b>" + sn(op.invisibile) + "</b> (scelte tue, già salvate)" : "opzioni non lette dal salvataggio della lega"; }
+    return "<div class='cd' style='margin-top:8px;padding:10px'><div class='lb'>RIEPILOGO PRIMA DELL'INVIO</div>" +
+      "<div class='mu' style='margin-top:4px'>LEGA: " + lega + "</div>" +
+      "<div class='mu'>FLE (con CONFERMA E INVIA): <b>tutte le competizioni</b> a cui sei iscritto · <b>invisibile</b> (sempre, impostato da FVM)</div>" +
+      (u && u.fonte !== "fantaclub" ? "<button class='bt' data-a='formazione'>TORNA ALLA FORMAZIONE DELLA LEGA</button><div class='mu' style='font-size:11px'>La formazione salvata resta com'è: puoi cambiarla e salvarla di nuovo.</div>" : "") + "</div>";
+  }
+  // PROVA13 B6: avviso FACOLTATIVO dopo un invio LEGA + FLE da Fantaclub salvato su FLE. Fantaclub non ha lo Switch: l'utente puo
+  // impostarlo SOLO lui, sulla pagina ufficiale FLE (MODIFICA SU FLE con la guardia della squadra, A1). FVM non scrive lo Switch,
+  // non lo cancella e non insiste: NON ORA nasconde l'avviso per questo invio. Solo con la squadra FLE abbinata e verificata.
+  function cartaSwitchFc(f) {
+    if (!f || f.fonte !== "fantaclub" || f.stato !== "inviata") return "";
+    if (f.swNonOra && Number(f.swNonOra) >= Number(f.inviataAt || 0)) return "";
+    var at = fleAttesoFc();
+    if (!at.ok || Number(f.tid) !== at.fleTid) return "";
+    var presente = !!(f.swInviato && f.swInviato.valori && Number(f.swInviato.valori.swtcA) && Number(f.swInviato.valori.swtcB)) || !!(f.sw && f.sw.stato === "presente");
+    return "<div class='cd' style='margin-top:8px;padding:10px;border-left:4px solid #e2b33c'><div class='lb'>SWITCH FLE · FACOLTATIVO</div>" +
+      "<div class='mu' style='margin-top:4px'>Fantaclub non prevede lo Switch. " + (presente ? "Su FLE risulta uno Switch: puoi cambiarlo oppure lasciarlo com'è." : "Se vuoi, puoi impostarlo tu sulla pagina ufficiale FLE.") + "</div>" +
+      "<div class='mu' style='font-size:11px'>FVM non scrive e non toglie lo Switch: lo scegli tu su FLE (squadra " + esc(at.squadra) + ", verificata).</div>" +
+      "<button class='bt oro' data-a='fc_imposta_sw'>" + (presente ? "MODIFICA SWITCH SU FLE" : "IMPOSTA SWITCH SU FLE") + "</button>" +
+      "<button class='bt' data-a='fc_sw_nonora'>" + (presente ? "LASCIA COSÌ" : "NON ORA") + "</button></div>";
+  }
   function cartaPasso2() {
     var u = formazioneSorgente(), f = leggi("fle", null) || {};
     var h = "<div class='cd' style='border-left:4px solid #2f6fe0'><div class='lb'>PASSO 2 · CONTROLLO FLE</div>";
@@ -3804,6 +5335,9 @@
     else if (f.stato === "controllo") { titolo = "Controllo FLE in corso…"; colore = "#fbbf24"; dettagli.push("Se resta così, tocca RIPETI CONTROLLO FLE."); }
     else if (res && res.complete) { titolo = "Controllo FLE OK ✓"; colore = "#4ade80"; }
     else if (res) { titolo = "Scegli il sostituto FLE"; colore = "#fbbf24"; }
+    // 1.3.5-RC2: Leghe Fantacalcio senza squadra FLE verificata per QUESTO account: un esito verde e di un controllo precedente
+    var precedente = colore === "#4ade80" && !(u && u.fonte === "fantaclub") && piattaformaScelta() !== "fantaclub" && !fleAutorizzatoLeghe(true).ok;
+    if (precedente) { titolo = "Controllo precedente: non vale per l'accesso attuale"; colore = "#9ca3af"; dettagli.unshift("Risultato di un controllo FLE fatto prima. Per questo account serve VERIFICA SQUADRA FLE riuscita: fino ad allora si usa SOLO LEGA."); }
     h += "<div class='t2' style='color:" + colore + "'>" + esc(titolo) + "</div>";
     h += "<div class='box3'><div class='box'><span>MODULO</span><b>" + esc(mod) + "</b></div><div class='box'><b>" + nt + "</b><span>TITOLARI</span></div><div class='box'><b>" + np + "</b><span>PANCHINA</span></div></div>";
     dettagli.forEach(function (d) { h += "<div class='mu'>• " + esc(d) + "</div>"; });
@@ -3815,15 +5349,23 @@
         h += "<div class='mu'>• Giocatori Fantaclub collegati ai 25 FLE: " + sfc.collegati + "/" + sfc.totale + "</div>";
       }
       if (res.moduleProblem) h += "<div class='mu' style='color:#f87171'>• " + esc(res.moduleProblem) + "</div>";
+      // PROVA12: panchinari della lega che non entrano nella panchina FLE (2P · 3D · 3C · 3A), con il motivo
+      if (res.esclusi && res.esclusi.length) h += "<div class='mu'>• Non entrano nella panchina FLE: " + res.esclusi.map(function (x) { return esc(x.name) + " (" + (RUOLI[x.role] || "?") + " · " + esc(x.motivo) + ")"; }).join(", ") + "</div>";
+      var nomeFle = function (pid) { var p = (f.roster || []).filter(function (x) { return Number(x.pid) === Number(pid); })[0]; return p ? p.name : (info[pid] && info[pid].n) || ("giocatore " + pid); };
+      var fino = function (d) { var t = new Date(d || 0); return isNaN(t.getTime()) ? "febbraio" : t.toLocaleDateString("it-IT"); };
+      var ricordate = 0;
       res.items.forEach(function (it) {
         var src = it.source ? (it.source.name + (it.source.club ? " " + it.source.club : "") + " (" + (RUOLI[it.role] || "?") + ")" + (it.source.nota ? " · " + it.source.nota : "")) : ("posto aggiunto in panchina (" + (RUOLI[it.role] || "?") + ")");
         var tit = it.kind === "start" ? "Titolare non nei tuoi 25 FLE: " + src : it.kind === "bench" ? "Panchinaro non nei tuoi 25 FLE: " + src : "Panchina FLE: manca un " + (RUOLI[it.role] || "?");
         if (!it.required && !it.chosen) return;
         h += "<div class='cd' style='margin-top:8px;padding:10px'><div class='mu' style='color:#fbbf24;font-weight:700'>" + esc(tit) + "</div>";
+        if (it.scartata && !it.chosen) h += "<div class='mu' style='color:#f87171'>La scelta " + (it.scartataRicordata ? "ricordata" : "precedente") + " (" + esc(nomeFle(it.scartata)) + ") non vale più: non è nei tuoi 25 FLE attuali, ha un altro ruolo o è già in formazione. Scegli di nuovo.</div>";
         if (it.chosen) {
           var ch = it.candidates.filter(function (c) { return c.pid === it.chosen; })[0] || { name: it.chosen, role: it.role };
-          h += rigaGiocatore(0, ch, "<span class='mu' style='margin-left:auto'>scelto ✓</span>");
-          h += "<button class='bt' data-a='annulla' data-k='" + esc(it.key) + "'>CAMBIA SCELTA</button>";
+          if (it.ricordata) ricordate++;
+          h += rigaGiocatore(0, ch, "<span class='mu' style='margin-left:auto'>" + (it.ricordata ? "ricordata ✓" : "scelto ✓") + "</span>");
+          if (it.ricordata) h += "<div class='mu'>Scelta ricordata fino al " + esc(fino(it.ricordataFino)) + (it.kind === "add" ? ": vale per qualsiasi " + esc(RUOLI[it.role] || "?") + " mancante in panchina, non per un giocatore preciso." : ", ricontrollata sui tuoi 25 FLE attuali.") + "</div>";
+          h += "<button class='bt' data-a='annulla' data-k='" + esc(it.key) + "'>" + (it.ricordata ? "ANNULLA SCELTA RICORDATA" : "CAMBIA SCELTA") + "</button>";
         } else {
           it.candidates.slice(0, 12).forEach(function (c) {
             h += "<div class='riga' data-a='scegli' data-k='" + esc(it.key) + "' data-p='" + c.pid + "'>" + badge(c.role) + "<span class='nm'>" + esc(c.name) + "</span>" +
@@ -3836,13 +5378,30 @@
       if (res.items.some(function (it) { return it.required || it.chosen; })) {
         h += "<label class='mu' style='display:flex;gap:8px;align-items:center;margin-top:6px'><input type='checkbox' id='fvm-ricorda' " + (leggi("ricorda", true) ? "checked" : "") + "> Ricorda le scelte fino a febbraio</label>";
       }
+      if (ricordate) h += "<button class='bt' data-a='dimentica_scelte'>DIMENTICA LE SCELTE RICORDATE (" + ricordate + ")</button>";
     }
-    var pronto = res && res.complete && f.stato !== "errore";
+    var pronto = res && res.complete && f.stato !== "errore" && !precedente;
+    // PROVA12: PASSO 3 solo con un controllo FLE recente (rosa FLE riletta)
+    var vecchioP2 = res && res.complete && f.stato !== "errore" && f.stato !== "inviata" ? controlloFleVecchio(f) : null;
+    if (vecchioP2) { pronto = false; h += "<div class='mu' style='color:#fbbf24;margin-top:4px'>• " + esc(vecchioP2.testo) + "</div><button class='bt' data-a='ricontrolla'>RIPETI CONTROLLO FLE</button>"; }
+    // PROVA8: SWITCH (solo se c'e qualcosa da dire). Una scelta obbligatoria mancante spegne CONFERMA E INVIA.
+    var swD = null;
+    if (res && f.stato !== "errore" && f.stato !== "inviata") {
+      try { swD = swPasso2(u, f, res); } catch (e) { swD = null; }
+      // invio fermato: UNA sola riga (niente doppione «non verificabile ora») + RIPETI CONTROLLO FLE subito sotto
+      if (f.swFermato) h += "<div class='mu' style='color:#f87171;margin-top:4px'>• Invio fermato prima del salvataggio, nessuna modifica su FLE: " + esc(f.swFermato.testo) + "</div>" +
+        "<button class='bt' data-a='ricontrolla'>RIPETI CONTROLLO FLE</button>";
+      if (swD && !(f.swFermato && swD.caso === "fle_non_verificabile")) h += swCarta(swD, u, f);
+      if (swD && swD.blocca && swD.motivo === "scelta_mancante") pronto = false;
+    }
     if (f.stato === "inviata") {
       if (f.compName) h += "<div class='mu'>• Destinazione FLE: " + esc(f.compName) + (f.squadra ? " · " + esc(f.squadra) : "") + "</div>";
       h += "<div class='mu' style='margin-top:6px'>Su FLE è salvata per tutte le competizioni a cui sei iscritto, <b>invisibile</b> agli avversari.</div>";
+      if (f.swInviato || f.swVerifica || f.swModifica || f.compVerifica) h += swCartaInviata(f, u);
+      if (u && u.fonte === "fantaclub") h += cartaSwitchFc(f); // PROVA13 B6: Switch facoltativo dopo l'invio da Fantaclub
       h += "<button class='bt' data-a='modifica'>MODIFICA SU FLE</button>";
     } else {
+      if (res && f.stato !== "errore") h += cartaRiepilogoSalvataggio(u); // PROVA13 decisione A
       h += "<button class='bt " + (pronto ? "oro" : "spento") + "' data-a='invia'><span style='font-size:10px;letter-spacing:2px'>PASSO 3</span><br>CONFERMA E INVIA A FLE</button>";
     }
     h += "</div>";
@@ -3979,11 +5538,17 @@
     if (piattaformaScelta() === "fantaclub") h += carteFantaclub();
     else {
     // 1.1.0: un solo comando. LEGA + FLE / SOLO LEGA / SOLO FLE si scelgono nella pagina formazione.
-    var lav = legaLavoro(), slugP1 = lav || slug, nonAss = !lav && fleNonAssociata();
+    var lav = legaLavoro(), slugP1 = lav || slug;
     h += "<div class='cd verde' data-a='formazione'><div class='lb' style='color:#cfe'>PASSO 1 · " + esc(slugP1 ? nomeLega(slugP1) : "LA TUA LEGA") + "</div>" +
       "<div style='font-size:18px;font-weight:900;margin:4px 0'>FAI O MODIFICA LA FORMAZIONE</div>" +
       "<div class='mu' style='color:#cfe'>Premi Salva formazione: ordine della panchina, poi controllo per FLE da solo.</div>" +
       "<div class='mu' style='color:#cfe;margin-top:4px'>Nella pagina della formazione puoi scegliere <span style='white-space:nowrap'>LEGA + FLE</span>, <span style='white-space:nowrap'>SOLO LEGA</span> o <span style='white-space:nowrap'>SOLO FLE</span>.</div></div>";
+    // la mia squadra (PROVA7: subito sotto FAI O MODIFICA LA FORMAZIONE, prima di SQUADRA FLE; contenuto identico)
+    var squadra = u && u.squadra ? u.squadra : "Da rilevare";
+    h += "<div class='cd'><div class='lb'>LA MIA SQUADRA</div><div class='t1' style='margin-top:6px'>" + esc(squadra) + "</div>" +
+      "<div class='mu' style='font-weight:800;margin-top:4px'>" + esc(slugP1 ? nomeLega(slugP1) : "") + "</div>" +
+      "<button class='bt' data-a='leghe'>CAMBIA LEGA</button>" +
+      (lav ? "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>SOLO LEGA: nessuna squadra FLE per questa lega</div>" : u && u.fleTid ? (fleAutorizzatoLeghe(true).ok ? "<div style='color:#4ade80;font-weight:800;margin-top:10px'>✓ Squadra FLE verificata per questo account</div>" : "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>Squadra FLE prevista dalla tabella: da verificare con VERIFICA SQUADRA FLE</div>") : "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>La squadra verrà riconosciuta dopo il salvataggio della formazione</div>") + "</div>";
     var sl = leggi("solo_lega_salvata", null);
     if (sl) {
       h += "<div class='cd' style='border-left:4px solid #e2b33c'><div class='lb'>SOLO LEGA</div>" +
@@ -3992,20 +5557,15 @@
         "<div class='mu'>" + esc(new Date(sl.at).toLocaleString("it-IT")) + " · modulo " + esc(String(sl.modulo || "").split("").join("-")) + (sl.cambiata ? " · panchina nel tuo ordine" : "") + "</div>" +
         "<div class='mu' style='color:#fbbf24;font-weight:700;margin-top:4px'>Non è stata mandata a FLE.</div></div>";
     }
-    if (lav || nonAss) {
-      // 1.3.4: nessun controllo/invio FLE con l'identita di un'altra lega o con un account non associato
+    if (lav) {
+      // 1.3.4: nessun controllo/invio FLE con l'identita di un'altra lega (1.3.5: l'account non associato e nel riquadro SQUADRA FLE)
       h += "<div class='cd' style='border-left:4px solid #e2b33c'><div class='lb'>SOLO LEGA · NESSUN INVIO A FLE</div>" +
-        (lav ? "<div class='mu'>Stai lavorando su " + esc(nomeLega(lav)) + ". La tua lega FLE resta " + esc(nomeLega(slug)) + ": per tornarci scegli LEGA + FLE nella pagina della formazione.</div>"
-          : "<div class='mu'>L'ultimo controllo FLE ha trovato con questo account una squadra FLE diversa da quella di " + esc(nomeLega(slug)) + ". FAI O MODIFICA parte in SOLO LEGA; LEGA + FLE resta possibile solo dopo un controllo FLE riuscito.</div>") +
+        "<div class='mu'>Stai lavorando su " + esc(nomeLega(lav)) + ". La tua lega FLE resta " + esc(nomeLega(slug)) + ": per tornarci scegli LEGA + FLE nella pagina della formazione.</div>" +
         "<div class='mu'>Far parte del circuito FantaLegaEuropa non basta: serve l'account associato alla squadra su FLE.</div></div>";
     }
+    // 1.3.5: VERIFICA SQUADRA FLE (sola lettura) con lo stato della verifica per la lega FLE
+    if (!lav) h += cartaSquadraFle();
     if (!lav) h += cartaPasso2();
-    // la mia squadra
-    var squadra = u && u.squadra ? u.squadra : "Da rilevare";
-    h += "<div class='cd'><div class='lb'>LA MIA SQUADRA</div><div class='t1' style='margin-top:6px'>" + esc(squadra) + "</div>" +
-      "<div class='mu' style='font-weight:800;margin-top:4px'>" + esc(slugP1 ? nomeLega(slugP1) : "") + "</div>" +
-      "<button class='bt' data-a='leghe'>CAMBIA LEGA</button>" +
-      (lav ? "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>SOLO LEGA: nessuna squadra FLE per questa lega</div>" : u && u.fleTid ? "<div style='color:#4ade80;font-weight:800;margin-top:10px'>✓ Squadra FLE riconosciuta</div>" : "<div style='color:#fbbf24;font-weight:700;margin-top:10px'>La squadra verrà riconosciuta dopo il salvataggio della formazione</div>") + "</div>";
     if (u && u.ok) {
       h += "<div class='cd'><div class='lb'>FORMAZIONE SALVATA IN LEGA</div><div class='mu' style='margin-top:6px'>" + esc(new Date(u.at).toLocaleString("it-IT")) + " · modulo " + esc(u.modulo) + " · " + u.titolari.length + " titolari · " + u.panchina.length + " panchinari</div>" +
         "<button class='bt' data-a='panchina'>MOSTRA PANCHINA ▾</button><div id='fvm-panchina' class='panchinaDet'>";
@@ -4035,6 +5595,11 @@
       el.addEventListener("click", function (ev) {
         ev.stopPropagation();
         var a = el.getAttribute("data-a");
+        // 1.3.5: VERIFICA SQUADRA FLE; RIPETI CONTROLLO, INVIA e MODIFICA SU FLE (Leghe) solo con la squadra FLE verificata
+        if (a === "verifica") { avviaVerificaFle("pulsante"); return; }
+        // PROVA8: scelta dello SWITCH nel PASSO 2 (solo registrata: nessuna modifica su FLE finche non si invia)
+        if (a.indexOf("sw_") === 0) { swScelta(a.slice(3)); return; }
+        if ((a === "ricontrolla" || a === "invia" || a === "modifica") && piattaformaScelta() !== "fantaclub" && bloccoFleLeghe(a)) return;
         // 1.1.0: CHIUDI della Home = uscita completa, solo dopo conferma (Annulla: non succede nulla)
         if (a === "chiudi" && confirm("Vuoi chiudere Fanta Vice Mister e uscire da Leghe Fantacalcio su questo iPhone?")) esciDaFvm("chiudi");
         if (a === "benvenuto") { scrivi("benvenuto_ok", true); log("BENVENUTO", "chiuso"); aggiornaPannello(); }
@@ -4049,7 +5614,7 @@
         if (a === "icona") meIconaHome();
         // 1.1.0: RIPETI CONTROLLO e INVIA lavorano sulla formazione LEGA + FLE: da SOLO LEGA si torna a LEGA + FLE.
         if ((a === "ricontrolla" || a === "invia") && leggi("modo", "lega_fle") === "solo_lega") { scrivi("modo", "lega_fle"); log("MODO", { a: "lega_fle", perche: a }); }
-        if (a === "leghe") { chiudiPannello(); location.assign("https://leghe.fantacalcio.it/"); }
+        if (a === "leghe") cambiaLegaHome();
         if (a === "accedi") accedi();
         if (a === "accedi_fc") accediFantaclub();
         if (a === "cambia") scegliPiattaforma();
@@ -4060,6 +5625,9 @@
         if (a === "admin") apriAdmin(true);
         // 1.1.0 Fantaclub: con Fantaclub scelto controllo e invio partono dalla formazione Fantaclub
         var conFc = piattaformaScelta() === "fantaclub";
+        // PROVA13 B6: Switch facoltativo dopo l'invio da Fantaclub. NON ORA = solo memoria di FVM; IMPOSTA = MODIFICA SU FLE (stesse guardie)
+        if (a === "fc_sw_nonora") { var fN = leggi("fle", null); if (fN) { fN.swNonOra = Date.now(); scrivi("fle", fN); } log("SWITCH FLE", { fonte: "fantaclub", scelta: "NON ORA" }); aggiornaPannello(); return; }
+        if (a === "fc_imposta_sw") { log("SWITCH FLE", { fonte: "fantaclub", scelta: "IMPOSTA SWITCH" }); a = "modifica"; }
         if (a === "ricontrolla") { if (conFc) avviaControlloFc("pulsante"); else avviaControlloFle("pulsante"); }
         if (a === "formazione_fc") consegnaFantaclub();
         if (a === "fc_squadra") { impostaSquadraFc(el.getAttribute("data-s")); if (abbinamentoFcValido(leggi("fc_ultima", null))) avviaControlloFc("squadra scelta"); else aggiornaPannello(); }
@@ -4076,8 +5644,17 @@
           if (pd) { pd.classList.toggle("aperta"); el.textContent = pd.classList.contains("aperta") ? "NASCONDI PANCHINA ▴" : "MOSTRA PANCHINA ▾"; }
         }
         if (a === "invia") { if (conFc) avviaInvioFc(); else avviaInvioFle(); }
+        if (a === "riprova_verifica") avviaRiverifica(); // PROVA11: solo letture
+        if (a === "dimentica_scelte") { var fD = leggi("fle", null); if (fD && fD.tid && confirm("Dimenticare le scelte ricordate per questa squadra FLE?\n\nI posti tornano da scegliere. Nessuna formazione viene salvata o inviata.")) { dimenticaScelteRicordate(fD.tid); aggiornaPannello(); } return; }
         // 1.1.0: MODIFICA SU FLE e lavoro solo sulla formazione FLE (modalita SOLO FLE nella barra).
         if (a === "modifica" && conFc && !fleFantaclubAmmesso().ok) { try { storicoBloccato("modifica_fle", (legaFc() || {}).nl || "", fleFantaclubAmmesso().testo); } catch (e) {} avviso(fleFantaclubAmmesso().testo, true); return; }
+        // PROVA12 A1: MODIFICA SU FLE da Fantaclub solo per la squadra FLE abbinata e gia controllata (squadra attesa nota)
+        if (a === "modifica" && conFc) {
+          var atM = fleAttesoFc(), fM = leggi("fle", {}) || {};
+          var noM = !atM.ok ? atM.testo : fM.fonte === "fantaclub" && Number(fM.tid) && Number(fM.tid) !== atM.fleTid
+            ? "L'ultimo controllo FLE riguarda la squadra " + fM.tid + ", non la tua (" + atM.squadra + "): MODIFICA SU FLE non aperta. Tocca RIPETI CONTROLLO FLE." : "";
+          if (noM) { log("GUARDIA FLE", { piattaforma: "fantaclub", azione: "modifica", esito: "non aperta", atteso: atM.ok ? atM.fleTid : 0, controllo: Number(fM.tid || 0) }); try { storicoBloccato("modifica_fle", (legaFc() || {}).nl || "", noM); } catch (e) {} avviso(noM, true); return; }
+        }
         if (a === "modifica") { var f = leggi("fle", {}); if (f.comp) { try { sScrivi("storico_modifica", { at: Date.now() }); } catch (e) {} scrivi("modo", "solo_fle"); log("MODO", { a: "solo_fle", perche: "modifica" }); chiudiPannello(); location.assign(fleLineupUrl(f.comp)); } }
         if (a === "scegli" || a === "annulla") {
           var f2 = leggi("fle", null);
@@ -4105,12 +5682,23 @@
   // Non avviare il controllo automatico: l'utente deve poter vedere,
   // modificare e salvare la formazione FLE normalmente.
   // 1.1.0: si sceglie dalla barra della pagina formazione.
+  // PROVA12 A7: un SOLO FLE bloccato non cambia da solo la modalita scelta: resta quella di prima. Unica eccezione di
+  // sicurezza: se la modalita registrata fosse gia SOLO FLE (aprirebbe FLE da sola), torna quella precedente o LEGA + FLE.
+  function ripristinaModoBloccato(prima, perche) {
+    var ora = leggi("modo", "lega_fle");
+    if (ora !== "solo_fle") return ora;
+    var torna = prima && prima !== "solo_fle" ? prima : "lega_fle";
+    scrivi("modo", torna);
+    log("MODO", { da: ora, a: torna, perche: perche || "SOLO FLE bloccato", nota: "SOLO FLE non attivato" });
+    return torna;
+  }
   function apriCampoFle(nlFc) {
     // Fantaclub scelto: blocco PRIMA di qualsiasi navigazione (quindi prima del login Leghe e della scelta di altre leghe)
     if (piattaformaScelta() === "fantaclub") {
-      var esFle = fleFantaclubAmmesso(nlFc);
+      // PROVA12: anche la squadra FLE attesa (A1); bloccato = nessuna navigazione e modalita lasciata com'era (A7)
+      var esFle = ammessoCampoFleFc(nlFc);
       if (!esFle.ok) {
-        scrivi("modo", "lega_fle");
+        ripristinaModoBloccato(null, "SOLO FLE bloccato (Fantaclub)");
         log("SOLO FLE BLOCCATO", { piattaforma: "fantaclub", motivo: esFle.motivo, lega: esFle.lega || "" });
         aggiornaBarra(true);
         apriPannello();
@@ -4136,9 +5724,10 @@
       return;
     }
     // 1.1.0: come l'app, si parte da LEGA + FLE; 1.3.4: salvo account non associato alla squadra FLE (resta SOLO LEGA)
-    var nonAss = fleNonAssociata();
-    scrivi("modo", nonAss ? "solo_lega" : "lega_fle");
-    if (nonAss) log("PASSO 1", { modo: "solo_lega", perche: "squadra FLE non associata a questo account (ultimo controllo)" });
+    // 1.3.5: LEGA + FLE SOLO con la squadra FLE verificata (VERIFICA SQUADRA FLE o controllo riuscito); altrimenti SOLO LEGA
+    var azF = fleAutorizzatoLeghe();
+    scrivi("modo", azF.ok ? "lega_fle" : "solo_lega");
+    if (!azF.ok) log("PASSO 1", { modo: "solo_lega", perche: azF.motivo === "non_associato" ? "squadra FLE non associata a questo account (ultimo controllo)" : "squadra FLE " + (azF.motivo === "incerta" ? "con verifica incerta" : "non ancora verificata") });
     scrivi("solo_lega_salvata", null);
     var slug = legaCorrente();
     if (!slug) {
@@ -4236,6 +5825,8 @@
       if (!trovate.length && Date.now() - sceltaDa < 6000) return; // ancora in caricamento
       sceltaFatta = true;
       log("LEGA SORGENTE ACCOUNT", { previste: trovate, attuale: sorgente || "", nonDisponibile: nonDisponibile });
+      // PROVA14: le leghe del circuito mostrate dal sito per l'account collegato sono leghe di QUESTO account
+      if (!sLeggi("task")) trovate.forEach(function (s) { registraLegaAperta(s, "elenco «Scegli una lega» del sito"); });
       if (sorgente && !nonDisponibile && trovate.indexOf(sorgente) >= 0) return; // gia corretta per questo account
       if (trovate.length === 1) { impostaSorgente(trovate[0], "account"); continuaDopoSorgente(); return; }
       if (trovate.length > 1) {
@@ -4255,6 +5846,13 @@
   function scegliModo(m) {
     var prima = leggi("modo", "lega_fle");
     if (m === prima) return;
+    // 1.3.5: LEGA + FLE e SOLO FLE (Leghe Fantacalcio) solo con la squadra FLE verificata; altrimenti resta la modalita attuale
+    if ((m === "lega_fle" || m === "solo_fle") && piattaformaScelta() !== "fantaclub" && bloccoFleLeghe(m)) { log("MODO", { da: prima, a: m, esito: "non autorizzato" }); aggiornaBarra(true); return; }
+    // PROVA12 A1/A7: SOLO FLE con Fantaclub controllato PRIMA di cambiare modalita (bloccato = resta quella di prima)
+    if (m === "solo_fle" && piattaformaScelta() === "fantaclub") {
+      var esM = ammessoCampoFleFc();
+      if (!esM.ok) { log("SOLO FLE BLOCCATO", { piattaforma: "fantaclub", motivo: esM.motivo, lega: esM.lega || "" }); log("MODO", { da: prima, a: m, esito: "non autorizzato" }); aggiornaBarra(true); avviso(esM.testo, true); return; }
+    }
     scrivi("modo", m);
     log("MODO", { da: prima, a: m, pagina: location.pathname });
     if (m !== "solo_lega" && leggi("lega_lavoro", "")) cambiaLegaLavoro("", m === "lega_fle" ? "LEGA + FLE scelto" : "SOLO FLE scelto");
@@ -4334,7 +5932,9 @@
       h += "<div class='chips'></div>";
     }
     // sulla pagina FLE niente piu testo lungo: restano i chip. Promemoria Panchina FLE solo in LEGA + FLE (come Android).
-    if (modo === "lega_fle" && !suFle()) h += "<div class='regole' data-b='regole'>ⓘ Panchina FLE: almeno 2P · 3D · 3C · 3A dei 25 FLE, nel tuo ordine di entrata ›</div>";
+    if (modo === "lega_fle" && !suFle()) h += "<div class='regole' data-b='regole'>ⓘ Panchina FLE: esattamente 2P · 3D · 3C · 3A (11 fissi, regolamento FLE) dei 25 FLE, nel tuo ordine di entrata ›</div>";
+    // PROVA13 decisione A: promemoria delle opzioni di salvataggio (le scelte nella lega restano dell'utente; su FLE FVM decide sempre)
+    if (modo === "lega_fle" && !suFle()) h += "<div class='regole'>ⓘ Nella tua lega «Salva per tutte le competizioni» e «Invisibile» li scegli tu. Su FLE FVM salva sempre per tutte le competizioni, invisibile.</div>";
     // 1.1.0 sfarfallio: se il contenuto e identico a quello gia disegnato non ricostruisco la barra
     // (i comandi restano quelli gia collegati: stesso HTML = stessi valori)
     if (barra.__fvmHtml === h) { spazioBarra(); aggiornaFab(); return; }
@@ -4962,6 +6562,161 @@
     }, 400);
   }
 
+  // ================================================================ 1.3.5 VERIFICA SQUADRA FLE (sola lettura, come Android 1.3.1)
+  // Tre dati confrontati; nessuna formazione salvata o inviata (solo pagine del sito aperte e letture GET):
+  //  1) squadra dell'account nella lega FLE = teamLineupDto.tid della pagina formazione della lega (risposta del sito);
+  //  2) squadra FLE attesa = tabella delle 80 squadre per quella squadra (deve appartenere a quella lega);
+  //  3) squadra dell'account su FLE = teamLineupDto.tid della pagina formazione FLE di una competizione in cui la squadra
+  //     attesa e iscritta (classifiche Ranking per ultime).
+  // Esiti: VERIFICATA (3 = 2), DIVERSA (3 != 2), INCERTA (qualunque dato mancante o non coerente). Mai dedotta dal circuito.
+  function avviaVerificaFle(perche) {
+    if (piattaformaScelta() === "fantaclub") { avviso("La verifica riguarda Leghe Fantacalcio: tocca CAMBIA → Leghe Fantacalcio.", true); return; }
+    if (!connesso()) { avviso("Prima tocca ACCEDI ed entra in Leghe Fantacalcio.", true); return; }
+    var src = leggi("lega_sorgente", "");
+    if (!src) { avviso("Entra prima nella tua lega con CAMBIA LEGA: poi premi di nuovo VERIFICA SQUADRA FLE.", true); return; }
+    // 1.3.5-RC: la verifica e legata all'account: senza account riconosciuto non parte (lo legge, poi si ripete)
+    if (!identitaAttuale()) { verificaIdentita("VERIFICA SQUADRA FLE"); log("VERIFICA FLE", { esito: "non avviata", motivo: "identita non riconosciuta" }); avviso(testoIdentita(), true); return; }
+    var t = sLeggi("task");
+    if (t && Date.now() - Number(t.inizio || 0) < 180000) { avviso("Fanta Vice Mister sta già lavorando: attendi la fine e riprova.", true); return; }
+    var task = { tipo: "verifica", fase: "lega", run: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), inizio: Date.now(), lega: src };
+    sScrivi("task", task);
+    ctl.payloadLega = null;
+    log("VERIFICA SQUADRA FLE", { fase: "avvio", perche: perche, lega: src, account: "riconosciuto in questa scheda", associazione: (associazioneLeghe() || {}).esito || "nessuna" });
+    chiudiPannello();
+    // la pagina formazione va sempre RICARICATA: la squadra si legge dalla risposta del sito al caricamento
+    var u = urlFormazione(src);
+    if (u) { location.assign(u); return; }
+    try { sessionStorage.setItem(PREFISSO + "vai", "1"); } catch (e) {}
+    location.assign("https://leghe.fantacalcio.it/" + src);
+    setTimeout(function () { avviso("Se non si apre da sola, tocca \"Inserisci formazione\" nella pagina della lega."); }, 8000);
+  }
+  function eseguiVerificaLega(task) {
+    var w = lavoro("Verifica squadra FLE…"), atteso = 0;
+    w.stato("Leggo la tua squadra in " + nomeLega(task.lega) + "…");
+    var t1 = setInterval(function () {
+      atteso += 500;
+      var p = ctl.payloadLega;
+      if (p && p.tid) {
+        clearInterval(t1); w.chiudi();
+        var map = trovaFleTid(p.tid), nomeL = (LEGHE_FONTE.filter(function (l) { return l[1] === task.lega; })[0] || [])[0] || nomeLega(task.lega);
+        task.sorgente = Number(p.tid);
+        if (!map) return concludiVerifica(task, "incerta", "la squadra dell'account in " + nomeL + " (" + p.tid + ") non è nella tabella delle 80 squadre FLE");
+        if (map.lega !== nomeL) return concludiVerifica(task, "incerta", "la squadra letta (" + map.squadra + ") appartiene a " + map.lega + ", non a " + nomeL);
+        task.atteso = map.fleTid; task.squadra = map.squadra; task.fase = "select_fle";
+        sScrivi("task", task);
+        log("VERIFICA SQUADRA FLE", { fase: "lega", sorgente: task.sorgente, atteso: task.atteso });
+        selezionaFleNelSelettore(task);
+      } else if (atteso >= 20000) { clearInterval(t1); w.chiudi(); concludiVerifica(task, "incerta", "squadra dell'account nella lega non letta"); }
+    }, 500);
+  }
+  function eseguiVerificaFle(task) {
+    var w = lavoro("Verifica squadra FLE…"), atteso = 0;
+    if (task.fase === "dash") {
+      w.stato("Cerco le competizioni FLE della tua squadra…");
+      var chieste = false;
+      var t2 = setInterval(function () {
+        atteso += 500;
+        // come AGGIORNA (1.3.4): se il sito non chiede l'elenco delle competizioni, FVM lo legge UNA volta dopo 6 s
+        if (!ctl.comps && !chieste && ctl.hdr && atteso >= 6000) {
+          chieste = true;
+          getApi("/onboarding/v1/league/competitions", true).then(function (j) { var l = listaCompetizioni(j); if (l.length && !ctl.comps) ctl.comps = l; })
+            .catch(function (e) { log("VERIFICA SQUADRA FLE", { fase: "competizioni", esito: "errore", http: e && e.http || 0 }); });
+        }
+        if (ctl.comps) {
+          clearInterval(t2); w.chiudi();
+          var attive = ctl.comps.filter(function (c) { return c && !c.del; });
+          var dove = attive.filter(function (c) { return (Array.isArray(c.tmids) ? c.tmids : []).map(Number).indexOf(Number(task.atteso)) >= 0; })
+            .sort(function (a, b) { return (naturaCompetizione(a) !== "obbligo" ? 1 : 0) - (naturaCompetizione(b) !== "obbligo" ? 1 : 0); });
+          // 1.3.5-RC2: fino a 4 competizioni della squadra attesa, una dopo l'altra (come Android); classifiche per ultime
+          var daProvare = dove.slice(0, 4).map(function (c) { return Number(c.id); });
+          log("VERIFICA SQUADRA FLE", { fase: "competizioni", attive: attive.length, conLaSquadra: dove.length, daProvare: daProvare.join(",") });
+          if (!dove.length) return concludiVerifica(task, "incerta", "la squadra FLE attesa (" + task.squadra + ", " + task.atteso + ") non risulta iscritta a una competizione FLE attiva");
+          task.fase = "lineup"; task.comps = daProvare; task.idx = 0; task.tentativi = []; task.comp = daProvare[0];
+          sScrivi("task", task);
+          location.assign(fleLineupUrl(task.comp));
+        } else if (atteso >= 25000) { clearInterval(t2); w.chiudi(); concludiVerifica(task, "incerta", "competizioni FLE non lette"); }
+      }, 500);
+      return;
+    }
+    if (task.fase === "lineup") {
+      var tutte = Array.isArray(task.comps) && task.comps.length ? task.comps : [task.comp], stabile = 0;
+      w.stato("Leggo la squadra del tuo account su FLE (" + (Number(task.idx || 0) + 1) + "/" + tutte.length + ")…");
+      var t3 = setInterval(function () {
+        atteso += 500;
+        // 1.3.5-RC2: squadra dalle risposte della pagina formazione di QUESTA competizione (verificaFleDaRisposta)
+        var r = ctl.verificaFle;
+        if (r && r.tids.length > 1) { clearInterval(t3); w.chiudi(); return tentativoVerificaFle(task, "squadre diverse nella stessa pagina: lettura ambigua"); }
+        if (r && r.tids.length === 1) {
+          stabile += 500;
+          if (stabile < 1500) return; // breve attesa: nessuna seconda squadra diversa nella stessa pagina
+          clearInterval(t3); w.chiudi();
+          task.letto = Number(r.tids[0]);
+          log("VERIFICA SQUADRA FLE", { fase: "tentativo", comp: Number(task.comp), tentativo: Number(task.idx || 0) + 1, di: tutte.length, esito: "squadra letta", senzaGiocatori: !!r.senzaGiocatori });
+          if (task.letto === Number(task.atteso)) return concludiVerifica(task, "verificata", "");
+          var altra = SQUADRE.filter(function (t) { return Number(t[2]) === task.letto; })[0];
+          return concludiVerifica(task, "diversa", "su FLE questo account gestisce " + (altra ? altra[1] + " (" + altra[0] + ")" : "la squadra FLE " + task.letto + ", non presente nella tabella delle 80") + ", non " + task.squadra + " (squadra FLE " + task.atteso + ")");
+        }
+        if (atteso >= 20000) { clearInterval(t3); w.chiudi(); tentativoVerificaFle(task, location.pathname.indexOf("/competition/" + task.comp + "/lineup") < 0 ? "il sito non ha aperto la pagina formazione di questa competizione" : !r || !r.risposte ? "nessuna risposta del sito con la squadra" : r.altre ? "risposte di un'altra competizione" : "risposta del sito senza squadra"); }
+      }, 500);
+    }
+  }
+  // 1.3.5-RC2: tentativo non riuscito su una competizione: si prova la successiva (al massimo 4), poi esito INCERTO con i motivi
+  function tentativoVerificaFle(task, motivo) {
+    var tutte = Array.isArray(task.comps) && task.comps.length ? task.comps : [task.comp], idx = Number(task.idx || 0);
+    task.tentativi = (task.tentativi || []).concat([{ comp: Number(task.comp), motivo: motivo }]).slice(-4);
+    log("VERIFICA SQUADRA FLE", { fase: "tentativo", comp: Number(task.comp), tentativo: idx + 1, di: tutte.length, esito: "non letta", motivo: motivo });
+    var att = sLeggi("task");
+    if (idx + 1 < tutte.length && att && att.tipo === "verifica" && att.run === task.run) {
+      task.idx = idx + 1; task.comp = Number(tutte[idx + 1]); task.inizio = Date.now();
+      sScrivi("task", task);
+      location.assign(fleLineupUrl(task.comp));
+      return;
+    }
+    concludiVerifica(task, "incerta", "squadra FLE dell'account non letta in " + tutte.length + (tutte.length === 1 ? " competizione" : " competizioni") + " FLE (" + task.tentativi.map(function (t) { return t.comp + ": " + t.motivo; }).join("; ") + ")");
+  }
+  function concludiVerifica(task, esito, motivo) {
+    var att = sLeggi("task");
+    if (!att || att.tipo !== "verifica" || att.run !== task.run) { log("VERIFICA SQUADRA FLE", { esito: "ignorata", motivo: "attività superata" }); return; }
+    sScrivi("task", null);
+    var rec = { lega: task.lega, esito: esito, atteso: Number(task.atteso || 0), letto: Number(task.letto || 0), sorgente: Number(task.sorgente || 0),
+      squadra: String(task.squadra || ""), motivo: String(motivo || "").slice(0, 240), fonte: "verifica", at: Date.now() };
+    // vale SOLO per la lega FLE per cui e partita (se nel frattempo e cambiata, l'esito non viene registrato)
+    if (leggi("lega_sorgente", "") === task.lega) scriviAssociazione(rec);
+    log("VERIFICA SQUADRA FLE", { esito: esito, lega: task.lega, sorgente: rec.sorgente, atteso: rec.atteso, letto: rec.letto, tentativiFalliti: (task.tentativi || []).length, motivo: rec.motivo });
+    sScrivi("apri", "main");
+    sScrivi("flash", esito === "verificata" ? "Squadra FLE verificata ✓ " + rec.squadra : esito === "diversa" ? "Squadra FLE DIVERSA: nessun invio a FLE (vedi la Home)" : "Verifica non riuscita: " + rec.motivo);
+    location.assign(urlLegaSorgente());
+  }
+  // 1.3.5 PROTEZIONE SOLO FLE / MODIFICA SU FLE (Leghe Fantacalcio): se nella pagina formazione FLE il sito mostra una
+  // squadra DIVERSA da quella verificata, o se la squadra non e verificata, la pagina si chiude prima di qualsiasi salvataggio.
+  function guardiaCampoFle() {
+    if (!suFle() || !suFormazione() || sLeggi("task") || window.__fvmInvio || piattaformaScelta() === "fantaclub" || leggi("modo", "lega_fle") !== "solo_fle") return false;
+    var pl = ctl.payload;
+    if (!pl || !pl.tid) return false;
+    var a = associazioneLeghe(), atteso = a && a.esito === "verificata" ? attesoAssociazione(a) : 0;
+    if (atteso && Number(pl.tid) === atteso) return false;
+    var testo = atteso ? "Su FLE questo account mostra la squadra " + pl.tid + ", non la tua (" + atteso + "): pagina FLE chiusa, nessun salvataggio. Entra con l'account giusto e ripeti VERIFICA SQUADRA FLE."
+      : fleAutorizzatoLeghe(true).testo;
+    if (atteso) scriviAssociazione({ lega: leggi("lega_sorgente", ""), esito: "diversa", atteso: atteso, letto: Number(pl.tid), motivo: "squadra diversa nella pagina FLE (SOLO FLE / MODIFICA SU FLE)", fonte: "guardia", at: Date.now() });
+    log("GUARDIA FLE", { atteso: atteso, letto: Number(pl.tid), comp: pl.comp, esito: "pagina FLE chiusa" });
+    scrivi("modo", "solo_lega");
+    sScrivi("storico_modifica", null);
+    sScrivi("apri", "main"); sScrivi("flash", testo);
+    location.assign(urlLegaSorgente());
+    return true;
+  }
+  // 1.3.5: riquadro SQUADRA FLE nella Home (Leghe Fantacalcio): stato della verifica e pulsante VERIFICA SQUADRA FLE
+  function cartaSquadraFle() {
+    var src = leggi("lega_sorgente", ""), a = associazioneLeghe(), nome = src ? nomeLega(src) : "la tua lega";
+    var quando = a && a.at ? " · " + new Date(a.at).toLocaleString("it-IT") : "";
+    var h = "<div class='cd' style='border-left:4px solid " + (a && a.esito === "verificata" ? "#3fae4a" : a && a.esito === "diversa" ? "#e2333b" : "#e2b33c") + "'><div class='lb'>SQUADRA FLE</div>";
+    if (a && a.esito === "verificata") h += "<div style='color:#4ade80;font-weight:900;margin-top:6px'>✓ VERIFICATA" + (a.squadra ? " · " + esc(a.squadra) : "") + "</div><div class='mu'>Questo account gestisce su FLE la squadra di " + esc(nome) + esc(quando) + ". LEGA + FLE disponibile.</div>";
+    else if (a && a.esito === "diversa") h += "<div style='color:#f87171;font-weight:900;margin-top:6px'>SQUADRA DIVERSA · NESSUN INVIO A FLE</div><div class='mu'>Con questo account su FLE c'è una squadra FLE diversa da quella di " + esc(nome) + (a.motivo ? ": " + esc(a.motivo) : "") + esc(quando) + ". FAI O MODIFICA parte in SOLO LEGA.</div>";
+    else if (a && a.esito === "incerta") h += "<div style='color:#fbbf24;font-weight:900;margin-top:6px'>NON VERIFICATA</div><div class='mu'>Esito incerto" + (a.motivo ? ": " + esc(a.motivo) : "") + esc(quando) + ". Finché la verifica non riesce si usa SOLO LEGA.</div>";
+    else h += "<div style='color:#fbbf24;font-weight:900;margin-top:6px'>DA VERIFICARE</div><div class='mu'>Prima di mandare formazioni a FLE controlla che questo account gestisca su FLE la squadra di " + esc(nome) + ". Fino ad allora si usa SOLO LEGA.</div>";
+    return h + "<button class='bt" + (a && a.esito === "verificata" ? "" : " oro") + "' data-a='verifica'>VERIFICA SQUADRA FLE</button>" +
+      "<div class='mu' style='margin-top:6px;font-size:11px'>Sola lettura: nessuna formazione viene salvata o inviata.</div></div>";
+  }
   function avviaControlloFle(perche) {
     var u = leggi("ultima", null);
     if (!u || !u.ok) { avviso("Prima salva la formazione con il riquadro verde.", true); return; }
@@ -4988,6 +6743,8 @@
     var u = formazioneSorgente();
     if (!u || u.fonte !== "fantaclub" || u.titolari.length !== 11) { avviso("Prima consegna la formazione su Fantaclub con FAI O MODIFICA LA FORMAZIONE.", true); return; }
     if (!inCircuitoFc(u.nl)) { avviso("Questa lega Fantaclub non è nel circuito FLE (o non è stata riconosciuta): nessun controllo né invio FLE.", true); apriPannello(); return; }
+    // 1.3.5-RC: il controllo FLE si fa con l'account di Leghe Fantacalcio: serve riconosciuto in questa scheda
+    if (!identitaAttuale()) { log("CONTROLLO FLE BLOCCATO", { fonte: "fantaclub", motivo: "identita non riconosciuta" }); verificaIdentita("controllo FLE da Fantaclub"); avviso(testoIdentita(), true); apriPannello(); return; }
     if (!u.fleTid) { avviso("Prima scegli la tua squadra Fantaclub.", true); apriPannello(); return; }
     var ritorno = suFle() ? (leggi("fle", {}).ritorno || "") : location.href;
     // FLE sta su Leghe Fantacalcio: senza quell'accesso il controllo non puo partire (lo dico chiaramente)
@@ -5015,7 +6772,12 @@
     var f = leggi("fle", null), res = risultatoFle(), u = formazioneSorgente();
     if (!u || u.fonte !== "fantaclub" || !u.fleTid || !f || f.fonte !== "fantaclub" || !res || !res.complete || f.stato === "errore" || f.stato === "controllo") { avviso("Prima completa il controllo FLE.", true); return; }
     if (!Number(f.comp) || Number(f.tid) !== Number(u.fleTid)) { avviso("Il controllo FLE non corrisponde a questa squadra: tocca RIPETI CONTROLLO FLE.", true); return; }
+    var vecchioFc = controlloFleVecchio(f); // PROVA12: rosa FLE da rileggere prima di inviare
+    if (vecchioFc) { log("INVIO FLE FERMATO", { fonte: "fantaclub", motivo: "controllo FLE vecchio", dettaglio: vecchioFc.motivo }); avviso(vecchioFc.testo, true); return; }
     var inv = { starts: res.starts.map(function (p) { return p.pid; }), bench: res.bench.map(function (p) { return p.pid; }), mdl: u.modulo, capt: null };
+    // PROVA8: Switch gia presente su FLE e incompatibile = scelta obbligatoria prima dell'invio (Fantaclub non ha lo Switch)
+    var swD = null; try { swD = swPasso2(u, f, res); } catch (e) { swD = null; }
+    if (swD && swD.blocca && swD.motivo === "scelta_mancante") { log("INVIO FLE FERMATO", { fonte: "fantaclub", motivo: swD.motivo, caso: swD.caso, prima: "del passaggio a FLE" }); avviso(swTesto(swD, u, f), true); return; }
     sScrivi("task", { tipo: "invio", inizio: Date.now(), comp: f.comp, inv: inv, fonte: "fantaclub" });
     log("INVIO FLE AVVIO", { fonte: "fantaclub", comp: f.comp, tid: f.tid, squadra: f.squadra, titolari: inv.starts.length, panchina: inv.bench.length, modulo: inv.mdl });
     if (suFle() && location.pathname.indexOf("/competition/" + f.comp + "/lineup") >= 0) eseguiInvio(sLeggi("task"));
@@ -5036,8 +6798,15 @@
     apriPannello();
   }
   // fresco: lettura sempre dal server (controlli Area Admin e Consegne ufficiali); errore con il codice HTTP in e.http
+  // RC4: le intestazioni copiate dal sito possono contenere una convalida della cache (If-None-Match, If-Modified-Since…): con quelle
+  // il server risponde 304 SENZA dati (anche con cache "no-store"). Le letture di FVM non le inviano: il server risponde 200 con i dati.
+  function senzaConvalida(h) {
+    var o = {};
+    Object.keys(h || {}).forEach(function (k) { if (!/^(if-none-match|if-modified-since|if-match|if-unmodified-since|if-range)$/i.test(k)) o[k] = h[k]; });
+    return o;
+  }
   function getApi(path, fresco) {
-    var op = { headers: ctl.hdr || {}, credentials: "include" };
+    var op = { headers: senzaConvalida(ctl.hdr), credentials: "include" };
     if (fresco) op.cache = "no-store";
     return fetchOriginale(API + path, op).then(function (r) {
       if (!r.ok) { var e = new Error("HTTP " + r.status + " " + path); e.http = r.status; throw e; }
@@ -5120,16 +6889,27 @@
             log("CONTROLLO FLE TID DIVERSO", { atteso: task.fleTid, letto: pl.tid, comp: pl.comp });
             if (task.lista && task.idx + 1 < task.lista.length) { task.idx++; return provaPagina(task); }
             // 1.3.4: account NON associato alla squadra FLE attesa per la lega FLE: da qui FAI O MODIFICA parte in SOLO LEGA
-            scrivi("fle_associazione", { lega: leggi("lega_sorgente", ""), esito: "diversa", atteso: Number(task.fleTid), letto: Number(pl.tid), at: Date.now() });
+            scriviAssociazione({ lega: leggi("lega_sorgente", ""), esito: "diversa", atteso: Number(task.fleTid), letto: Number(pl.tid), at: Date.now() });
             w.chiudi();
             return erroreControllo("Squadra FLE diversa", ["In questa pagina FLE c'è la squadra " + pl.tid + ", non la tua (" + task.fleTid + ").", "Controlla di essere entrato in Leghe con il tuo account."], task);
+          }
+          // PROVA12: rosa FLE da 25 giocatori, letta per intero (come Android «Rosa FLE non conforme»): altrimenti nessun invio
+          var esameR = esameRosaFle(pl.ids);
+          if (esameR.esito !== "ok") {
+            log("CONTROLLO FLE ROSA", { esito: esameR.esito, giocatori: esameR.n, senzaRuolo: esameR.senzaRuolo, comp: pl.comp, tid: pl.tid });
+            w.chiudi();
+            return erroreControllo(esameR.titolo, esameR.dettagli, task);
           }
           // (1.1.0 Fantaclub: anche la squadra di Serie A, per l'abbinamento per nome + squadra + ruolo)
           var roster = pl.ids.map(function (pid) { var x = info[pid] || {}; return { pid: pid, name: x.n || String(pid), role: Number(x.r || 0), flag: x.f || "", club: x.c || "" }; });
           var f = leggi("fle", {}) || {};
-          if (task.fleTid && pl.tid && Number(pl.tid) === Number(task.fleTid)) scrivi("fle_associazione", { lega: leggi("lega_sorgente", ""), esito: "verificata", fleTid: Number(pl.tid), at: Date.now() });
+          f.controlloAt = Date.now(); // PROVA12: ora del controllo (PASSO 3 solo con un controllo recente)
+          if (task.fleTid && pl.tid && Number(pl.tid) === Number(task.fleTid)) scriviAssociazione({ lega: leggi("lega_sorgente", ""), esito: "verificata", fleTid: Number(pl.tid), at: Date.now() });
           f.stato = "controllato"; f.comp = pl.comp; f.compName = task.compName || ""; f.tid = pl.tid || task.fleTid; f.squadra = task.squadra;
           f.roster = roster; f.mday = pl.mday; f.cmday = pl.cmday; f.choices = {}; f.ritorno = task.ritorno || f.ritorno || "";
+          // PROVA8: Switch letto su FLE e giornata di Serie A corrente (league/status di FLE) per il PASSO 2
+          f.sw = pl.sw || null; f.swTarget = Number(ctl.status && ctl.status.mday || 0) || 0; f.swLettoAt = Date.now();
+          delete f.swFermato; delete f.swVerifica; delete f.swModifica; delete f.swEliminato; delete f.compVerifica; // PROVA9: anche la verifica delle competizioni
           scrivi("fle", f);
           sScrivi("task", null);
           var res = risultatoFle();
@@ -5156,6 +6936,34 @@
       }, 500);
     }
   }
+  // PROVA12: esame della rosa FLE letta nella pagina formazione FLE (regolamento: 25 giocatori, 3 P · 8 D · 8 C · 6 A).
+  // Motivi distinti: NON LETTA (nessun giocatore), INCOMPLETA (giocatori senza nome o ruolo: dati del sito non caricati),
+  // NON CONFORME (letta per intero ma con un numero diverso da 25). Ogni caso ferma il controllo: nessun invio.
+  function esameRosaFle(ids) {
+    var lista = (Array.isArray(ids) ? ids : []).map(Number).filter(Boolean), visti = {}, doppi = 0;
+    lista.forEach(function (p) { if (visti[p]) doppi++; visti[p] = 1; });
+    var n = lista.length - doppi;
+    var senza = lista.filter(function (p) { var x = info[p] || {}; return !Number(x.r || 0) || !String(x.n || "").trim(); }).length;
+    var fine = "Nessun salvataggio è stato eseguito su FLE: tocca RIPETI CONTROLLO FLE.";
+    if (!n) return { esito: "non_letta", n: 0, senzaRuolo: 0, titolo: "Rosa FLE non letta",
+      dettagli: ["La pagina formazione FLE non ha mostrato i giocatori della tua rosa.", fine] };
+    if (senza) return { esito: "incompleta", n: n, senzaRuolo: senza, titolo: "Rosa FLE letta in modo incompleto",
+      dettagli: [senza + " giocatori su " + n + " senza nome o ruolo: il sito FLE non ha caricato tutti i dati.", fine] };
+    if (n !== 25) return { esito: "non_conforme", n: n, senzaRuolo: 0, titolo: "Rosa FLE non conforme: " + n + "/25",
+      dettagli: ["La rosa FLE ufficiale letta ha " + n + " giocatori invece di 25 (regolamento FLE).", "Verifica la rosa con l'admin della tua lega FLE.", fine] };
+    return { esito: "ok", n: n, senzaRuolo: 0 };
+  }
+  // PROVA12: un controllo FLE vale per l'invio solo se recente: stessa giornata di Serie A (se nota) e al massimo 12 ore
+  function fleControlloMaxMs() { return 12 * 3600000; }
+  function controlloFleVecchio(f) {
+    if (!f || !f.roster) return null;
+    var at = Number(f.controlloAt || f.swLettoAt || 0), gSA = Number(ctl.status && ctl.status.mday || 0), gF = Number(f.cmday || 0);
+    var r = !at ? "il controllo è di una versione precedente di FVM (ora non registrata)"
+      : Date.now() - at > fleControlloMaxMs() ? "il controllo è di " + new Date(at).toLocaleString("it-IT") + " (più di 12 ore fa)"
+      : gSA && gF && gSA !== gF ? "il controllo è della " + gF + "ª giornata di Serie A, ora è la " + gSA + "ª"
+      : "";
+    return r ? { motivo: r, testo: "Controllo FLE da ripetere prima dell'invio: " + r + ". La rosa FLE potrebbe essere cambiata: tocca RIPETI CONTROLLO FLE (nessun salvataggio finora)." } : null;
+  }
   function scegliCompetizione(task, lista, w) {
     var c = lista[0];
     log("CONTROLLO FLE DESTINAZIONE", { comp: c.id, nome: c.name, possibili: lista.length });
@@ -5175,11 +6983,16 @@
   function avviaInvioFle() {
     var f = leggi("fle", null), res = risultatoFle(), u = leggi("ultima", null);
     if (!f || !res || !res.complete || f.stato === "errore") { avviso("Prima completa il controllo FLE.", true); return; }
+    var vecchio = controlloFleVecchio(f); // PROVA12: rosa FLE da rileggere prima di inviare
+    if (vecchio) { log("INVIO FLE FERMATO", { motivo: "controllo FLE vecchio", dettaglio: vecchio.motivo }); avviso(vecchio.testo, true); return; }
     // capitano e vice: se uno dei due e stato sostituito su FLE, passa al suo sostituto (stessa posizione)
     var cambio = {};
     u.titolari.forEach(function (pid, i) { if (res.starts[i]) cambio[pid] = res.starts[i].pid; });
     var capt = Array.isArray(u.capt) ? u.capt.map(function (c) { var id = idDi(c); return cambio[id] || id; }) : (cambio[idDi(u.capt)] || u.capt);
     var inv = { starts: res.starts.map(function (p) { return p.pid; }), bench: res.bench.map(function (p) { return p.pid; }), mdl: u.modulo, capt: capt };
+    // PROVA8: scelta Switch obbligatoria mancante = nessun invio (la decisione definitiva si ripete sulla pagina FLE)
+    var swD = null; try { swD = swPasso2(u, f, res); } catch (e) { swD = null; }
+    if (swD && swD.blocca && swD.motivo === "scelta_mancante") { log("INVIO FLE FERMATO", { motivo: swD.motivo, caso: swD.caso, prima: "del passaggio a FLE" }); avviso(swTesto(swD, u, f), true); return; }
     sScrivi("task", { tipo: "invio", inizio: Date.now(), comp: f.comp, inv: inv });
     log("INVIO FLE AVVIO", { comp: f.comp, titolari: inv.starts.length, panchina: inv.bench.length, modulo: inv.mdl });
     if (suFle() && location.pathname.indexOf("/competition/" + f.comp + "/lineup") >= 0) eseguiInvio(sLeggi("task"));
@@ -5209,6 +7022,8 @@
       var b = bottoneSalva();
       if (ctl.payload && b) {
         clearInterval(t);
+        // PROVA8: decisione Switch con la pagina FLE appena letta, PRIMA del clic; non sicura = invio fermato
+        if (!swPreparaInvio(task)) return;
         window.__fvmInvio = Object.assign({}, task.inv);
         w.stato("Salvo la formazione su FLE…");
         log("INVIO FLE CLICK", { comp: ctl.payload.comp, tid: ctl.payload.tid, disabilitato: !!b.disabled });
@@ -5222,9 +7037,22 @@
         }, 7000);
       } else if (atteso >= 20000) {
         clearInterval(t);
+        // PROVA8: anche l'invio di riserva solo con lo Switch verificato sulla pagina FLE
+        if (!swPreparaInvio(task)) return;
         invioDirettoSorgente(task);
       }
     }, 500);
+  }
+  // PROVA8: decisione Switch per l'invio (in task.inv.sw, usata da riscriviPerFle sia nel salvataggio del sito sia
+  // nell'invio di riserva). Ritorna false se l'invio e stato fermato.
+  function swPreparaInvio(task) {
+    var d = null;
+    try { d = swDecisioneInvio(task); } catch (e) { d = { blocca: true, motivo: "fle_non_verificabile", caso: "fle_non_verificabile", errore: String(e && e.message || e).slice(0, 80) }; }
+    if (d.blocca) { invioFermato(d, task); return false; }
+    task.inv = task.inv || {};
+    task.inv.sw = { valori: d.valori, scrittura: d.scrittura, caso: d.caso, azione: d.azione || "", posSoloSePresente: !!d.posSoloSePresente, situazione: d.situazione, target: d.target, chiave: d.chiave };
+    log("INVIO SWITCH DECISO", { caso: d.caso, scrittura: d.scrittura, azione: d.azione || "", lega: d.lega, fle: d.fle, giornata: d.target, chiave: d.chiave });
+    return true;
   }
   // 1.1.0 diagnosi: solo i NOMI delle intestazioni e il valore del Content-Type (mai credenziali, cookie, token, Authorization)
   function diagIntestazioni(h) {
@@ -5260,17 +7088,38 @@
   }
   function fineInvio(ok, stato, testo) {
     if (invioCorrente && invioCorrente.finito) return;
+    // PROVA8: decisione Switch di questo invio (per la verifica su FLE dopo il salvataggio)
+    var swInv = invioCorrente && invioCorrente.task && invioCorrente.task.inv && invioCorrente.task.inv.sw ? invioCorrente.task.inv.sw : null;
+    // PROVA9: formazione inviata da FVM (per la verifica individuale delle competizioni); assente = nessun invio FVM in corso
+    var taskInv = invioCorrente && invioCorrente.task && invioCorrente.task.inv && Array.isArray(invioCorrente.task.inv.starts) ? invioCorrente.task.inv : null;
     if (invioCorrente) { invioCorrente.finito = true; try { invioCorrente.w.chiudi(); } catch (e) {} }
     window.__fvmInvio = null;
     var esito = "";
     try { var j = JSON.parse(testo || "null"); esito = j && (j.success === false || j.error || j.errors) ? JSON.stringify(j).slice(0, 200) : ""; } catch (e) {}
     if (esito) ok = false;
     log("INVIO FLE ESITO", { ok: !!ok, stato: stato, risposta: String(testo || "").slice(0, 200) });
-    try { storicoInvioFle(ok, stato, testo); } catch (e) {} // storico: solo registrazione, isolata
+    // PROVA9: sintesi della risposta (campi chiave, mai intestazioni o credenziali), sempre completa nella diagnosi
+    var rsF = null; try { rsF = trovaFormazione(JSON.parse(testo || "null"), 0); } catch (e) { rsF = null; }
+    if (rsF) log("INVIO FLE RISPOSTA", { idcomp: Number(rsF.idcomp) || 0, tid: Number(rsF.tid) || 0, mday: rsF.mday, cmday: rsF.cmday, swtcA: rsF.swtcA, swtcB: rsF.swtcB, swtc: rsF.swtc, swtcMdl: rsF.swtcMdl, pos: rsF.pos,
+      mdl: rsF.mdl, titolari: (rsF.starts || []).length, panchina: (rsF.bench || []).length, tutte: rsF.allComp, visb: rsF.visb });
+    var idSt = null;
+    try { idSt = storicoInvioFle(ok, stato, testo, { inv: taskInv, comps: ctl.comps }); } catch (e) {} // storico: solo registrazione, isolata
     var f = leggi("fle", {}) || {}, u = formazioneSorgente() || {};
     sScrivi("task", null);
     if (ok) {
       f.stato = "inviata"; f.inviataAt = Date.now();
+      if (swInv) {
+        // PROVA8: cosa e stato scritto; la scelta MODIFICA resta in evidenza finche l'utente non salva su FLE
+        f.swInviato = { scrittura: swInv.scrittura, caso: swInv.caso, azione: swInv.azione, valori: swInv.valori, at: Date.now() };
+        delete f.swFermato; delete f.swVerifica;
+        if (swInv.azione === "modifica") f.swModifica = true; else delete f.swModifica;
+        if (swInv.azione === "elimina") f.swEliminato = true; else delete f.swEliminato;
+      }
+      // PROVA11: cio che serve per ripetere SOLO la verifica (RIPROVA VERIFICA, sola lettura): mai un nuovo invio
+      var targetV = swInv || taskInv ? Number(rsF && rsF.cmday) || Number(ctl.status && ctl.status.mday) || 0 : 0; // letto solo se ci sono verifiche (come prima)
+      if (swInv || taskInv) f.verificaRif = { at: Date.now(), comp: Number(f.comp) || 0, compName: f.compName || "", tid: Number(f.tid) || 0, idSt: idSt || null, target: targetV,
+        sw: swInv && swInv.valori ? { valori: swInv.valori } : null, inv: taskInv ? { starts: (taskInv.starts || []).slice(), bench: (taskInv.bench || []).slice(), mdl: taskInv.mdl } : null };
+      else delete f.verificaRif;
       scrivi("fle", f);
       var invii = leggi("invii", []);
       invii.unshift({ at: Date.now(), comp: f.comp, compName: f.compName, squadra: f.squadra || u.squadra, modulo: u.modulo, fonte: u.fonte });
@@ -5278,22 +7127,106 @@
       var modoFine = leggi("modo", "lega_fle");
       sScrivi("apri", "main");
       sScrivi("flash", "Formazione salvata su FLE ✓");
-      if (modoFine === "solo_fle") {
-        log("BLOCCO MODO", { modo: modoFine, perche: "fine invio", a: "FLE" });
-        // SOLO FLE resta fisicamente dentro FantaLegaEuropa.
-        if (!suFle()) location.assign(urlFleFissa()); else { avviso("Formazione salvata su FLE ✓"); apriPannello(); }
-      } else {
-        // LEGA+FLE torna sempre alla lega sorgente stabile.
-        var torna = f.ritorno && f.ritorno.indexOf("/" + FLE_SLUG + "/") < 0 ? f.ritorno : urlLegaSorgente();
-        log("BLOCCO MODO", { modo: modoFine, perche: "fine invio", a: legaCorrente() || "lega sorgente" });
-        location.assign(torna);
+      var prosegui = function () {
+        if (modoFine === "solo_fle") {
+          log("BLOCCO MODO", { modo: modoFine, perche: "fine invio", a: "FLE" });
+          // SOLO FLE resta fisicamente dentro FantaLegaEuropa.
+          if (!suFle()) location.assign(urlFleFissa()); else { avviso("Formazione salvata su FLE ✓"); apriPannello(); }
+        } else {
+          // LEGA+FLE torna sempre alla lega sorgente stabile.
+          var torna = f.ritorno && f.ritorno.indexOf("/" + FLE_SLUG + "/") < 0 ? f.ritorno : urlLegaSorgente();
+          log("BLOCCO MODO", { modo: modoFine, perche: "fine invio", a: legaCorrente() || "lega sorgente" });
+          location.assign(torna);
+        }
+      };
+      // PROVA8: verifica dello Switch su FLE dopo il salvataggio (sola lettura); PROVA9: in parallelo la verifica individuale
+      // delle competizioni; PROVA11: UNA lettura condivisa con tentativi limitati, esiti nello storico senza sovrascrivere
+      // quelli precedenti; poi il ritorno di sempre
+      var attese = 0, chiuso = false, rSw = null, rComp = null, wv = null, lettore = null;
+      var finisci = function () {
+        if (chiuso || attese > 0) return;
+        chiuso = true;
+        if (wv) { try { wv.chiudi(); } catch (e) {} }
+        if (rSw || rComp) {
+          var f4 = leggi("fle", {}) || {};
+          if (rSw) f4.swVerifica = rSw;
+          if (rComp) f4.compVerifica = { at: Date.now(), esiti: rComp };
+          scrivi("fle", f4);
+          if (idSt) storicoVerificaAggiungi(idSt, rSw, rComp, "dopo l'invio");
+        }
+        var avv = rSw || rComp ? fvmAvvisiVerifica(rSw, rComp) : [];
+        if (avv.length) sScrivi("flash", "Formazione salvata su FLE ✓ · " + avv.join(" · ") + ": controlla nel PASSO 2");
+        prosegui();
+      };
+      // prima si contano tutte le verifiche, poi si avviano (una che finisce subito non chiude le altre)
+      attese = (swInv ? 1 : 0) + (taskInv ? 1 : 0);
+      if (attese) { wv = lavoro("Verifico la formazione su FLE (sola lettura)…"); lettore = fvmLettoreCondiviso(); }
+      if (swInv) verificaSwitchFle(f.comp, f.tid, swInv, function (r) { rSw = r; attese--; finisci(); }, lettore);
+      if (taskInv) {
+        verificaCompetizioniFle({ tid: Number(f.tid), ingresso: Number(f.comp), ingressoNome: f.compName || "", target: targetV,
+          inv: taskInv, sw: swInv && swInv.valori ? swInv.valori : null, comps: ctl.comps, divisione: meDivisione(FLE_SLUG), leggi: lettore }, function (lst) { rComp = lst; attese--; finisci(); });
       }
+      if (!swInv && !taskInv) finisci();
     } else {
       f.stato = "errore"; f.titolo = "Invio su FLE non riuscito";
       f.dettagli = ["Il sito FLE non ha confermato il salvataggio" + (stato ? " (stato " + stato + ")" : "") + ".", "Riprova con RIPETI CONTROLLO FLE oppure manda la diagnosi al tuo admin."];
       scrivi("fle", f);
       apriPannello();
     }
+  }
+
+  // ---------------------------------------------------------------- PROVA11 · RIPROVA VERIFICA (SOLO LETTURE)
+  // Ripete soltanto le verifiche dell'ultimo invio FLE: apre la pagina della formazione FLE (lettura del sito), usa la
+  // formazione che il sito stesso ha letto e, se serve, letture GET con tentativi limitati. Mai un salvataggio, mai un
+  // invio, mai una nuova consegna nello storico: l'esito si aggiunge alle verifiche della consegna gia registrata.
+  function avviaRiverifica() {
+    var f = leggi("fle", null), R = f && f.verificaRif;
+    if (!R || !Number(R.comp)) { avviso("Nessuna verifica da ripetere: manca un invio FLE recente.", true); return; }
+    var qui = location.href.indexOf("/" + FLE_SLUG + "/") < 0 ? location.href : "";
+    var task = { tipo: "riverifica", inizio: Date.now(), comp: Number(R.comp), ritorno: qui || (f.ritorno && f.ritorno.indexOf("/" + FLE_SLUG + "/") < 0 ? f.ritorno : "") };
+    sScrivi("task", task);
+    log("RIPROVA VERIFICA", { fase: "avvio", comp: Number(R.comp), da: suFle() ? "pagina FLE" : "pagina della lega" });
+    chiudiPannello();
+    if (suFle() && location.pathname.indexOf("/competition/" + R.comp + "/lineup") >= 0) eseguiRiverifica(task);
+    else location.assign(fleLineupUrl(R.comp));
+  }
+  function eseguiRiverifica(task) {
+    var f = leggi("fle", {}) || {}, R = f.verificaRif, finito = false;
+    var w = lavoro("Ripeto la verifica su FLE (sola lettura, nessun invio)…");
+    var fine = function (rSw, rComp, nota) {
+      if (finito) return; finito = true;
+      var f5 = leggi("fle", {}) || {};
+      if (rSw) f5.swVerifica = rSw;
+      if (rComp) f5.compVerifica = { at: Date.now(), esiti: rComp };
+      f5.riverificaAt = Date.now();
+      scrivi("fle", f5);
+      if (R && R.idSt && (rSw || rComp)) storicoVerificaAggiungi(R.idSt, rSw, rComp, "RIPROVA VERIFICA");
+      log("RIPROVA VERIFICA", { fase: "fine", switch: rSw ? rSw.esito : "", tipo: rSw && rSw.tipo || "", motivo: rSw && rSw.motivo || "", tentativi: rSw && rSw.tentativi || 0,
+        competizioni: (rComp || []).map(function (c) { return c.id + ":" + c.esito; }), nota: nota || "" });
+      sScrivi("task", null);
+      sScrivi("apri", "main");
+      var avv = fvmAvvisiVerifica(rSw, rComp);
+      sScrivi("flash", avv.length ? "Verifica ripetuta (sola lettura) · " + avv.join(" · ") : rSw && rSw.esito === "ok" ? "Verifica ripetuta (sola lettura): Switch su FLE verificato ✓" : "Verifica ripetuta (sola lettura) ✓");
+      try { w.chiudi(); } catch (e) {}
+      if (task && task.ritorno) location.assign(task.ritorno); else apriPannello();
+    };
+    if (!R || !Number(R.comp)) return fine(null, null, "dati della verifica non disponibili");
+    // prima la formazione letta DAL SITO su questa pagina (nessuna richiesta di FVM), al massimo 8 s di attesa
+    var atteso = 0, t = setInterval(function () {
+      atteso += 500;
+      var d = ctl.payloadDto, pronta = !!(d && Number(d.idcomp) === Number(R.comp) && (!Number(R.tid) || Number(d.tid) === Number(R.tid)));
+      if (!pronta && atteso < 8000) return;
+      clearInterval(t);
+      var prima = {};
+      if (pronta) prima["/gaming/v1/teamLineup/visualizza/" + meDivisione(FLE_SLUG) + "/" + Number(R.comp)] = { teamLineupDto: d };
+      var lettore = fvmLettoreCondiviso(prima), rSw = null, rComp = null, attese = (R.sw ? 1 : 0) + (R.inv ? 1 : 0);
+      var nota = pronta ? "formazione letta dalla pagina FLE" : "pagina FLE senza formazione: letture di FVM";
+      if (!attese) return fine(null, null, "nessuna verifica prevista");
+      var uno = function () { if (--attese <= 0) fine(rSw, rComp, nota); };
+      if (R.sw) verificaSwitchFle(R.comp, R.tid, R.sw, function (r) { rSw = r; uno(); }, lettore);
+      if (R.inv) verificaCompetizioniFle({ tid: Number(R.tid), ingresso: Number(R.comp), ingressoNome: R.compName || "", target: Number(R.target) || 0, inv: R.inv,
+        sw: R.sw ? R.sw.valori : null, comps: ctl.comps, divisione: meDivisione(FLE_SLUG), leggi: lettore }, function (l) { rComp = l; uno(); });
+    }, 500);
   }
 
   // ---------------------------------------------------------------- pannello ordine di entrata
@@ -5413,6 +7346,42 @@
     try { w.chiudi(); } catch (e) {}
     if (task.ritorno && task.ritorno.indexOf("/" + task.slug + "/settings") < 0) location.assign(task.ritorno); else { apriUfficiale(); }
   }
+  // ================================================================ PROVA6: CONSEGNE UFFICIALI per partita (partecipanti)
+  // Tipi di competizione del sito con partite A COPPIE: 1 calendario, 4-6 gironi, 7-9 eliminazione diretta. Gli altri
+  // (2 contro tutti, 3 Formula 1, 10 Battle Royale, 11 Highlander) non hanno partite a coppie: nessuna lettura per partita.
+  // come letturaPartiteFle (FLE, NON modificata), per una competizione di una lega personale: tiene anche il modulo
+  // (mdl/nmdl) mostrato dalle CONSEGNE UFFICIALI; mai i giocatori. 4 partite alla volta, arresto al primo 429/5xx.
+  function letturaPartiteLega(comp, turno) {
+    var INSIEME = 4, PAUSA_MS = 250, mday = Number(turno.championshipMatchDay) || 0;
+    var coppie = (turno.matches || []).filter(function (m) { return m && Number(m.tIdH) > 0 && Number(m.tIdA) > 0; });
+    var R = { lineups: [], nonLette: [], letture: 0, fallite: 0, fermata: "", messaggio: "" }, i = 0;
+    function riga(p, atteso) {
+      var r = rigaPartitaFle(p);
+      if (!r) return null;
+      if (!r.tid) r.tid = atteso;
+      r.mdl = String(p.mdl || ""); r.nmdl = String(p.nmdl || "");
+      return r;
+    }
+    function gruppo() {
+      if (i >= coppie.length) return Promise.resolve(R);
+      if (R.fermata) { coppie.slice(i).forEach(function (m) { R.nonLette.push(Number(m.tIdH), Number(m.tIdA)); }); i = coppie.length; return Promise.resolve(R); }
+      var g = coppie.slice(i, i + INSIEME); i += g.length;
+      return Promise.all(g.map(function (m) {
+        var h = Number(m.tIdH), a = Number(m.tIdA);
+        R.letture++;
+        return apiFleLettura("/gaming/v1/teamLineup/" + comp + "/" + turno.matchDay + "/" + mday + "/" + h + "/" + a).then(function (j) {
+          if (j && typeof j === "object" && !Array.isArray(j) && !("home" in j) && !("away" in j) && j.data && typeof j.data === "object") j = j.data;
+          if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("risposta della partita non valida");
+          [[j.home, h], [j.away, a]].forEach(function (x) { var r = riga(x[0], x[1]); if (!r) return; if (r.tid === x[1]) R.lineups.push(r); else R.nonLette.push(x[1]); });
+        }).catch(function (e) {
+          R.fallite++; R.nonLette.push(h, a);
+          if (!R.messaggio) R.messaggio = (e && e.http ? "HTTP " + e.http : String(e && e.message || e).slice(0, 40)) + (e && e.msg ? " · " + e.msg : "");
+          if (e && (e.http === 429 || e.http >= 500)) R.fermata = "HTTP " + e.http;
+        });
+      })).then(function () { return new Promise(function (ok) { setTimeout(ok, PAUSA_MS); }); }).then(gruppo);
+    }
+    return gruppo();
+  }
   function eseguiControlloLega(task) {
     var w = lavoro("Consegne ufficiali · " + nomeLegaUff(task.slug)), atteso = 0;
     var R = { slug: task.slug, lega: nomeLegaUff(task.slug), quando: Date.now(), errori: [] };
@@ -5428,7 +7397,7 @@
       w.stato("Leggo competizioni, calendario e squadre…");
       var comps;
       apiJson("/onboarding/v1/league/competitions").then(function (j) {
-        comps = listaCompetizioni(j).filter(function (c) { return c && !c.del; }).map(function (c) { return { id: Number(c.id), nome: String(c.name || c.n || "").slice(0, 60) }; }).filter(function (c) { return c.id; });
+        comps = listaCompetizioni(j).filter(function (c) { return c && !c.del; }).map(function (c) { return { id: Number(c.id), nome: String(c.name || c.n || "").slice(0, 60), tipo: Number(c.type) || 0 }; }).filter(function (c) { return c.id; });
         R.competizioni = comps;
         var c = comps.filter(function (x) { return x.id === Number(task.comp); })[0] || comps.filter(function (x) { return /campionato/i.test(x.nome); })[0] || comps[0];
         if (!c) throw new Error("nessuna competizione leggibile");
@@ -5453,11 +7422,46 @@
         if (!turno) { R.stato = { fase: "nessuna_giornata", righe: [], conta: {}, squadre: 0 }; R.nota = "Competizione senza giornate disponibili (es. non ancora iniziata): nessuna mancata consegna."; return null; }
         R.turno = Number(turno.matchDay);
         w.stato("Leggo le formazioni della " + turno.matchDay + "ª giornata…");
-        return apiJson("/gaming/v1/teamLineup/" + R.comp + "/" + turno.matchDay + "/" + turno.championshipMatchDay).catch(function (e) { R.formazioniErrore = String(e && e.message || e).slice(0, 160); return null; }).then(function (lu) {
+        // PROVA6: lettura cumulativa ESATTAMENTE come prima (apiJson: amministratori della lega invariati). HTTP 400 = riservata agli amministratori della lega: per le competizioni
+        // A COPPIE (calendario, gironi, eliminazione diretta) lettura PER PARTITA come fa il sito per i partecipanti.
+        var pathL = "/gaming/v1/teamLineup/" + R.comp + "/" + turno.matchDay + "/" + turno.championshipMatchDay;
+        var tipoC = Number((comps.filter(function (x) { return x.id === R.comp; })[0] || {}).tipo || 0), aCoppie = [1, 4, 5, 6, 7, 8, 9].indexOf(tipoC) >= 0; // tipi a coppie (vedi sopra)
+        var nonLetteL = {}; // squadre non verificabili nella lettura per partita (tid -> motivo)
+        return apiJson(pathL).catch(function (e) {
+          if (!(e && e.http === 400 && aCoppie)) {
+            R.formazioniErrore = String(e && e.message || e).slice(0, 160) + (e && e.http === 400 && !aCoppie ? " · lettura per partita non disponibile per questo tipo di competizione" : "");
+            return null;
+          }
+          R.perPartita = { server: e.msg || "", tipo: tipoC };
+          log("CONSEGNE UFFICIALI", { lega: task.slug, stage: "per partita", comp: R.comp, tipo: tipoC, http: 400, server: e.msg || "" });
+          w.stato("Leggo le formazioni partita per partita…");
+          return letturaPartiteLega(R.comp, turno).then(function (P) {
+            P.nonLette.forEach(function (x) { nonLetteL[Number(x)] = "partita non letta"; });
+            // squadra a riposo (avversario 0 o negativo): il sito non legge la sua partita, nessun dato = mai "non inserita"
+            (turno.matches || []).forEach(function (m) {
+              var h = Number(m && m.tIdH) || 0, a = Number(m && m.tIdA) || 0;
+              if ((h > 0) !== (a > 0)) nonLetteL[h > 0 ? h : a] = "senza avversario nel turno: non letta per partita";
+            });
+            R.perPartita.letture = P.letture; R.perPartita.nonLette = P.nonLette.length / 2;
+            log("CONSEGNE UFFICIALI", { lega: task.slug, stage: "partite", comp: R.comp, letture: P.letture, fallite: P.fallite, formazioni: P.lineups.length, fermata: P.fermata || "" });
+            if (P.fallite || P.nonLette.length) R.errori.push((P.nonLette.length / 2) + " partite non lette" + (P.messaggio ? " (" + P.messaggio + ")" : "") + ": le loro squadre sono non verificabili");
+            return P.lineups;
+          });
+        }).then(function (lu) {
           // lettura non riuscita o risposta non valida: formazioni = null (squadre "non verificabili", mai "nessuna formazione")
           if (lu !== null && !Array.isArray(lu)) R.formazioniErrore = "risposta delle formazioni non valida";
           if (R.formazioniErrore) R.errori.push("formazioni della giornata non lette: " + R.formazioniErrore);
-          R.stato = fvmStatoLeghe({ turno: turno, formazioni: R.formazioniErrore ? null : lu, formazioniErrore: R.formazioniErrore || "", tipoGioco: R.tipoGioco, squadre: sq, nonCalcolate: nc, giornataSerieA: mday, inizioGiornata: st.mstr, regola: leggi("uff_regola_" + task.slug, null) });
+          R.stato = fvmStatoLeghe({ avvioDistinto: true, turno: turno, formazioni: R.formazioniErrore ? null : lu, formazioniErrore: R.formazioniErrore || "", tipoGioco: R.tipoGioco, squadre: sq, nonCalcolate: nc, giornataSerieA: mday, inizioGiornata: st.mstr, regola: leggi("uff_regola_" + task.slug, null) });
+          // PROVA6: dopo il motore degli stati (NON modificato): le squadre senza dati per lettura non possibile (partita non
+          // letta, squadra a riposo) diventano "non verificabili" con il motivo; conteggi ricalcolati
+          if (R.perPartita && R.stato && Array.isArray(R.stato.righe)) {
+            R.stato.righe.forEach(function (r) {
+              var mot = nonLetteL[Number(r.tid)];
+              if (!mot || ["presente", "recuperata", "tavolino"].indexOf(r.stato) >= 0) return;
+              r.stato = "non_verificabile"; r.nota = mot; delete r.statoUfficiale; delete r.evidenzia;
+            });
+            var cn = {}; R.stato.righe.forEach(function (r) { cn[r.stato] = (cn[r.stato] || 0) + 1; }); R.stato.conta = cn;
+          }
         });
       }).catch(function (e) { R.errori.push(String(e && e.message || e).slice(0, 160)); }).then(function () {
         salvaR();
@@ -5504,24 +7508,43 @@
     if (id) { sScrivi("uff_fc_atteso", { id: id, nl: String(nl), at: Date.now() }); log("CONSEGNE UFFICIALI", { piattaforma: "fantaclub", lega: nl, giornata: giornata || "corrente" }); }
     else avviso("Controllo Fantaclub non avviato.", true);
   }
+  // PROVA15: esito delle competizioni arrivato da Fantaclub, ripulito (solo i campi attesi, testi corti, cid numerici, al massimo 20)
+  function fvmFcCompetizioniRicevute(C) {
+    if (!C || typeof C !== "object") return null;
+    var esiti = ["elenco", "nessuna_aggiuntiva", "non_riconosciuta", "errore"], t = function (x, n) { return String(x == null ? "" : x).slice(0, n); };
+    var voci = (Array.isArray(C.voci) ? C.voci : []).filter(function (v) { return v && /^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(String(v.pagina || "")) && /^\d{1,6}$/.test(String(v.cid || "")) && t(v.nome, 60).trim(); }).slice(0, 20).map(function (v) {
+      return { chiave: v.pagina + ":" + v.cid, pagina: String(v.pagina), cid: String(v.cid), nome: t(v.nome, 60).trim(), attiva: !!v.attiva, tipo: t(v.tipo, 30), sottotitolo: t(v.sottotitolo, 120), giornate: t(v.giornate, 40),
+        coerente: v.coerente === true ? true : v.coerente === false ? false : undefined, errore: t(v.errore, 80) || undefined, nomeNonUnivoco: !!v.nomeNonUnivoco || undefined };
+    });
+    var sc = C.scartati && typeof C.scartati === "object" ? C.scartati : {};
+    var es = esiti.indexOf(C.esito) >= 0 ? C.esito : "non_riconosciuta"; if (es === "elenco" && !voci.length) es = "non_riconosciuta";
+    return { esito: es, voci: voci, errore: t(C.errore, 120) || undefined, titoloLega: !!C.titoloLega,
+      scartati: { altra_lega: Number(sc.altra_lega) || 0, cid_non_valido: Number(sc.cid_non_valido) || 0, doppioni: Number(sc.doppioni) || 0, senza_nome: Number(sc.senza_nome) || 0 } };
+  }
   function riceviControlloFc(msg) {
     var att = sLeggi("uff_fc_atteso"), d = msg.dati || {};
     sScrivi("uff_fc_atteso", null);
     if (!att || d.richiesta !== att.id || String(d.nl || "") !== att.nl || Date.now() - Number(att.at || 0) > 10 * 60000) { log("PASSAGGIO", { tipo: "controllo-fc-esito", esito: "non richiesto da questa scheda" }); return; }
     var R = { nl: att.nl, lega: nomeLegaFc(att.nl), quando: Date.now(), account: d.account || "", regola: d.regola || null, squadre: d.squadre || [], log: d.log || [], giornataPrecedente: d.giornataPrecedente || null,
-      giornataRichiesta: d.giornataRichiesta || "", errori: d.errori || [], logRidotto: d.logRidotto || 0 };
+      giornataRichiesta: /^\d{1,2}$/.test(String(d.giornataRichiesta || "")) ? String(d.giornataRichiesta) : "", errori: d.errori || [], logRidotto: d.logRidotto || 0,
+      competizioni: fvmFcCompetizioniRicevute(d.competizioni), audio: d.audio && typeof d.audio === "object" ? { fermata: !!d.audio.fermata, media: Number(d.audio.media) || 0, iframe: Number(d.audio.iframe) || 0 } : null, // PROVA15
+      giornate: (Array.isArray(d.giornate) ? d.giornate : []).map(String).filter(function (g) { return /^\d{1,2}$/.test(g); }).slice(0, 60) }; // PROVA13 B3
     R.stato = fvmStatoFc({ squadre: R.squadre, consegnate: d.consegnate || [], nonConsegnate: d.nonConsegnate || { letto: false, squadre: [] }, log: R.log, nascoste: !!(R.regola && /^si/i.test(R.regola.nascoste || "")) });
-    R.gestore = R.regola && R.account ? (R.regola.gestore === R.account || String(R.regola.altriAdmin || "").split(/[,;]\s*/).indexOf(R.account) >= 0) : null;
+    // PROVA13 B5: gestore/amministratore SOLO se la pagina Info mostra davvero il nome del gestore; senza quel dato il ruolo resta
+    // non determinato (prima: «non risulti gestore» anche quando il nome del gestore non era stato letto = permesso attribuito a caso)
+    R.gestore = R.regola && R.account && R.regola.gestore ? (R.regola.gestore === R.account || String(R.regola.altriAdmin || "").split(/[,;]\s*/).indexOf(R.account) >= 0) : null;
     scrivi("uff_fc_" + att.nl, R);
     // S5: account delle squadre Fantaclub (per lo storico personale: solo come dato letto dalla pagina Squadre)
     var acc = {}; R.squadre.forEach(function (s) { if (s.account && s.account !== FVM_ND) acc[s.squadra] = s.account; });
     scrivi("fc_squadre_account_" + att.nl, { at: Date.now(), account: acc, mio: R.account || "" });
     var note = leggi("fc_leghe_note", []) || []; if (note.indexOf(att.nl) < 0) { note.push(att.nl); scrivi("fc_leghe_note", note.slice(-12)); }
-    log("CONSEGNE UFFICIALI", { piattaforma: "fantaclub", lega: att.nl, squadre: R.squadre.length, errori: R.errori.length });
+    log("CONSEGNE UFFICIALI", { piattaforma: "fantaclub", lega: att.nl, squadre: R.squadre.length, errori: R.errori.length, giornata: R.giornataRichiesta || "corrente",
+      competizioni: R.competizioni ? { esito: R.competizioni.esito, voci: R.competizioni.voci.length, pagine: R.competizioni.voci.map(function (v) { return v.pagina; }).filter(function (p, i, a) { return a.indexOf(p) === i; }).join(","),
+        tipologie: R.competizioni.voci.filter(function (v) { return v.tipo; }).length, scartati: R.competizioni.scartati, errore: R.competizioni.errore || "" } : "non lette", audio: R.audio || "non indicato" }); // PROVA15 diagnosi
     sScrivi("apri", "ufficiale");
   }
   // ---- schermata CONSEGNE UFFICIALI (Leghe Fantacalcio e Fantaclub), separata dallo storico personale
-  var ETICHETTE_UFF = { presente: ["🟢", "Formazione presente", "#4ade80"], assente: ["🔴", "Nessuna formazione (giornata calcolata)", "#f87171"],
+  var ETICHETTE_UFF = { presente: ["🟢", "Formazione presente", "#4ade80"], assente: ["🔴", "Senza formazione", "#f87171"],
     recuperata: ["🔴", "Recuperata dal Server", "#f87171"], tavolino: ["🔴", "Sconfitta a tavolino", "#f87171"], assente_provvisorio: ["🟠", "Nessuna formazione · giornata da calcolare", "#fbbf24"],
     in_attesa: ["⏳", "In attesa / non ancora visibile", "#fbbf24"], futura: ["·", "Giornata futura", "#7d8799"], non_verificabile: ["❔", FVM_ND, "#aab3c2"],
     consegnata: ["🟢", "Consegnata", "#4ade80"], non_consegnata: ["🔴", "Senza formazione (elenco ufficiale)", "#f87171"] };
@@ -5544,6 +7567,14 @@
     // in rosso tenue: recuperi dal server, sconfitte a tavolino, formazioni non inserite (giornata calcolata)
     return "<div style='margin-top:8px;font-size:14px" + (r.evidenzia ? ";background:rgba(248,113,113,0.12);border-radius:8px;padding:4px 6px" : "") + "'><span style='color:" + e[2] + ";font-weight:800'>" + e[0] + " " + esc(r.squadra) + "</span><div class='mu' style='font-size:12px'>" + esc(testo) + (det ? " · " + esc(det) : "") + (r.nota ? " · " + esc(r.nota) : "") + (!r.statoUfficiale && r.provenienza && /recuperata/.test(r.provenienza) ? "<br>provenienza: " + esc(r.provenienza) : "") + "</div></div>";
   }
+  // RC3 (come Android RiepilogoSquadre): riepilogo colorato per stato sempre visibile, squadre dietro MOSTRA SQUADRE
+  function listaUff(righe, k) {
+    righe = righe || [];
+    if (!righe.length) return "";
+    var rie = riepilogoStati(righe);
+    return "<div style='margin-top:8px;font-size:14px;font-weight:800'>" + rie.map(function (x) { return "<span style='color:" + x.colore + "'>" + x.simbolo + " " + x.n + " " + esc(x.etichetta) + "</span>"; }).join(" · ") + "</div>" +
+      "<button class='bt' style='margin-top:6px;padding:8px' data-a='uff_det' data-c='" + k + "'>MOSTRA SQUADRE ▾</button><div id='fvm-uffdet-" + k + "' class='panchinaDet'>" + righe.map(rigaUff).join("") + "</div>";
+  }
   function selUff(id, voci, scelto) { return "<select id='" + id + "' style='width:100%;margin-top:6px;padding:10px;border-radius:10px;background:#0a1524;color:#fff;border:1px solid #2a4370;font-size:15px'>" + voci.map(function (v) { return "<option value='" + esc(v[0]) + "'" + (String(v[0]) === String(scelto) ? " selected" : "") + ">" + esc(v[1]) + "</option>"; }).join("") + "</select>"; }
   function disegnaUfficiale() {
     if (!pannello) return;
@@ -5551,6 +7582,13 @@
     var R = slug ? leggi("uff_leghe_" + slug, null) : null;
     if (slug && !leghe.some(function (l) { return l.slug === slug; })) leghe.push({ slug: slug, nome: R && R.lega ? R.lega : nomeLega(slug) });
     var h = "<div class='cd'><button class='x' data-a='indietro'>INDIETRO</button><div class='t1'>CONSEGNE UFFICIALI</div><div class='mu' style='margin-top:6px'>Registri ufficiali delle piattaforme, anche per consegne fatte fuori da FVM o prima della sua installazione. Sono separati dallo storico personale di FVM. Solo lettura, con i permessi del tuo account. Nessun calcolo di jolly o penalità.</div></div>";
+    // 1.3.5-RC: UNA piattaforma per volta = quella attiva. L'altra piattaforma solo come VISTA SEPARATA, richiesta esplicitamente dall'Area
+    // Admin sbloccata (CONSEGNE DELL'ALTRA PIATTAFORMA), con l'intestazione della piattaforma e i permessi dell'account di quel sito.
+    var pfAtt = piattaformaScelta(), altraV = !!sLeggi("uff_altra") && adminSbloccato(), pfU = altraV ? (pfAtt === "fantaclub" ? "fantacalcio" : "fantaclub") : pfAtt;
+    if (sLeggi("uff_altra") && !altraV) sScrivi("uff_altra", null);
+    h += "<div class='mu' style='margin:0 2px 8px'>" + (altraV ? "VISTA SEPARATA: consegne di " + (pfU === "fantaclub" ? "FANTACLUB" : "LEGHE FANTACALCIO") + " (piattaforma attiva: " + (pfAtt === "fantaclub" ? "Fantaclub" : "Leghe Fantacalcio") + ")."
+      : "Piattaforma attiva: " + (pfAtt === "fantaclub" ? "FANTACLUB" : "LEGHE FANTACALCIO") + ". Le consegne dell'altra piattaforma si vedono solo dall'Area Admin, in una vista separata.") + "</div>";
+    if (pfU === "fantacalcio") {
     // --- Leghe Fantacalcio
     h += "<div class='cd'><div class='lb'>LEGHE FANTACALCIO</div>" + selUff("fvm-uff-lega", leghe.map(function (l) { return [l.slug, l.nome]; }), slug);
     if (R && R.competizioni && R.competizioni.length) h += selUff("fvm-uff-comp", R.competizioni.map(function (c) { return [c.id, c.nome]; }), R.comp);
@@ -5563,39 +7601,70 @@
         "<div class='mu'>Controllo: " + esc(new Date(R.quando).toLocaleString("it-IT")) + " · strumenti admin nella pagina: " + (R.admin ? "sì (corona)" : "non rilevati") + "</div>" +
         "<div class='mu'>Regola per formazione non schierata (Opzioni di Lega → Calcolo): <b>" + esc(fvmTestoRegola(reg)) + "</b> · è la regola configurata, non un esito</div>";
       if (R.nota) h += "<div class='mu' style='color:#fbbf24'>" + esc(R.nota) + "</div>";
+      if (R.perPartita) h += "<div class='mu'>Letta partita per partita (account non amministratore della lega): solo i dati visibili al tuo account.</div>";
       (R.errori || []).forEach(function (e) { h += "<div style='color:#f87171;font-size:13px'>" + esc(e) + "</div>"; });
       var cn = S.conta || {};
       if (S.dettaglio) h += "<div class='mu' style='margin-top:4px'>Formazione non inserita (" + (cn.assente || 0) + ") · Recuperata dal Server (" + (cn.recuperata || 0) + ") · Sconfitta a tavolino (" + (cn.tavolino || 0) + ")</div>";
-      (S.righe || []).forEach(function (r) { h += rigaUff(r); });
+      h += listaUff(S.righe, "leghe"); // RC3 (come Android): riepilogo colorato, squadre dietro MOSTRA SQUADRE
       h += "<div class='mu' style='font-size:11px;margin-top:8px'>" + (S.dettaglio
         ? "Orari: ora italiana (dati ufficiali in UTC convertiti con Europe/Rome). Stato di ogni formazione come indicato da Leghe Fantacalcio. In rosso tenue: recuperi dal server, formazioni non inserite (giornata calcolata), sconfitte a tavolino. Nessun calcolo di jolly, penalità o regolamento."
         : "Orari: ora italiana (dati ufficiali in UTC convertiti con Europe/Rome). Canale di invio, recupero dal server e interventi admin: " + FVM_ND + " (i dati letti non li indicano)." + (S.tipoGioco === "mantra" ? " Lega Mantra: stati dettagliati rimandati a un prossimo aggiornamento." : "")) + "</div>";
       if (S.righe && S.righe.length) h += "<button class='bt' style='border-color:#22c55e;color:#4ade80' data-a='uff_leghe_wa'>CONDIVIDI SU WHATSAPP</button>";
     }
     h += "</div>";
+    } // 1.3.5-RC: fine della sezione Leghe Fantacalcio
+    if (pfU === "fantaclub") {
     // --- Fantaclub
     var lfc = legheFcControllabili(), nl = sel.nl || ((legaFc() || {}).nl || "").toLowerCase() || (lfc[0] || {}).nl, F = nl ? leggi("uff_fc_" + nl, null) : null;
     if (nl && !lfc.some(function (l) { return l.nl === nl; })) lfc.push({ nl: nl, nome: F && F.lega ? F.lega : String(nl).toUpperCase() });
+    // PROVA13 B3: LEGA → (COMPETIZIONE) → GIORNATA con le opzioni REALI lette dal sito (selettore «giornata» di Formazioni passate);
+    // finche la lega non e stata controllata una volta resta il campo numerico di prima
+    var giornateFc = F && Array.isArray(F.giornate) ? F.giornate : [];
+    // PROVA15: LEGA → COMPETIZIONE (motore generico: pagina «Tornei» del sito, nome + tipologia ufficiale) → GIORNATA; con la consegna
+    // unica la scelta NON crea consegne, stati o invii separati
+    var CF = F ? fvmFcCompetizioni(F.regola, F.competizioni, sel.compFc || "") : null;
     h += "<div class='cd'><div class='lb'>FANTACLUB</div>" + selUff("fvm-uff-fc", lfc.map(function (l) { return [l.nl, l.nome]; }), nl) +
-      "<input id='fvm-uff-gfc' inputmode='numeric' placeholder='Giornata precedente (facoltativa, numero del sito)' value='" + esc(sel.giornataFc || "") + "' style='width:100%;margin-top:6px;padding:10px;border-radius:10px;background:#0a1524;color:#fff;border:1px solid #2a4370;font-size:15px'>" +
+      (CF && CF.voci.length ? selUff("fvm-uff-cfc", [["", CF.unica ? "Tutte le competizioni (consegna unica)" : "Tutte le competizioni"]].concat(CF.voci.map(function (v) { return [v.chiave, v.nome.toUpperCase() + " · " + fvmFcTipologia(v)]; })), sel.compFc || "") : "") +
+      (giornateFc.length ? selUff("fvm-uff-gfc", [["", "Giornata corrente (consegne in corso)"]].concat(giornateFc.map(function (g) { return [g, fvmFcEtichettaGiornata(g)]; })), sel.giornataFc || "")
+        : "<input id='fvm-uff-gfc' inputmode='numeric' placeholder='Giornata precedente (facoltativa, numero del sito)' value='" + esc(sel.giornataFc || "") + "' style='width:100%;margin-top:6px;padding:10px;border-radius:10px;background:#0a1524;color:#fff;border:1px solid #2a4370;font-size:15px'>") +
       "<button class='bt oro' data-a='uff_fc'>" + (F ? "AGGIORNA" : "CONTROLLA") + " SU FANTACLUB</button>";
     if (F) {
       var SF = F.stato || {}, rg = F.regola || {};
-      h += "<div style='margin-top:10px;font-weight:800'>" + esc(F.lega) + " · giornata " + esc(SF.giornata || "?") + " (numerazione del sito)</div>" +
-        "<div class='mu'>Controllo: " + esc(new Date(F.quando).toLocaleString("it-IT")) + (F.account ? " · account collegato: " + esc(F.account) : "") + (F.gestore === true ? " · gestore o amministratore della lega (pagina Info)" : F.gestore === false ? " · non risulti gestore (pagina Info)" : "") + "</div>" +
-        "<div class='mu'>Regole (Info → Consegna e sostituzioni): mancata consegna: <b>" + esc(rg.mancataConsegna || FVM_ND) + "</b> · formazioni nascoste: " + esc(rg.nascoste || FVM_ND) + " · scadenza: " + esc(rg.scadenza || FVM_ND) + "</div>";
+      // PROVA14 (punto 4): l'intestazione dice la giornata del RISULTATO mostrato (prima: sempre la giornata corrente, anche con
+      // una giornata passata scelta); avvisi se la scelta attuale o la pagina del sito non corrispondono alla richiesta
+      var AG = fvmFcAllineamentoGiornata(sel.giornataFc || "", F);
+      h += "<div style='margin-top:10px;font-weight:800'>" + esc(F.lega) + " · " + esc(AG.titolo) + " · numerazione del sito</div>";
+      AG.avvisi.forEach(function (t) { h += "<div style='color:#fbbf24;font-size:13px;font-weight:800;margin-top:4px'>⚠️ " + esc(t) + "</div>"; });
+      h += "<div class='mu'>Controllo: " + esc(new Date(F.quando).toLocaleString("it-IT")) + (F.account ? " · account collegato: " + esc(F.account) : "") + (F.gestore === true ? " · gestore o amministratore della lega (pagina Info)" : F.gestore === false ? " · non risulti gestore (pagina Info)" : " · ruolo nella lega (gestore o partecipante): non indicato nelle pagine lette") + "</div>" +
+        "<div class='mu'>" + esc(CF.testo) + "</div>" + (CF.principale ? "<div class='mu'>" + esc(CF.principale) + "</div>" : "") + (CF.nota ? "<div class='mu'>" + esc(CF.nota) + "</div>" : "") +
+        "<div class='mu'>Regole (Info → Consegna e sostituzioni): mancata consegna: <b>" + esc(rg.mancataConsegna || FVM_ND) + "</b> · formazioni nascoste: " + esc(rg.nascoste || FVM_ND) + " · scadenza: " + esc(rg.scadenza || FVM_ND) + (rg.fonte ? " · fonte: " + esc(rg.fonte) : "") + "</div>";
       (F.errori || []).forEach(function (e) { h += "<div style='color:#f87171;font-size:13px'>" + esc(e) + "</div>"; });
-      (SF.righe || []).forEach(function (r) { h += rigaUff(r); });
-      if (F.giornataPrecedente) {
+      // giornata passata scelta: PRIMA il suo elenco (e quello richiesto), poi la giornata corrente con il suo titolo
+      if (AG.richiesta) {
         var GP = F.giornataPrecedente;
-        h += "<div class='lb' style='margin-top:10px'>GIORNATA " + esc(GP.giornata || F.giornataRichiesta) + " (giornate passate)</div>";
-        (GP.consegnate || []).forEach(function (c) { h += rigaUff({ squadra: c.squadra, stato: "consegnata", ora: c.ora, account: c.account }); });
-        h += "<div class='mu' style='font-size:12px'>Le squadre non elencate non risultano in questa pagina: " + FVM_ND + " (l'elenco delle giornate passate mostra solo le formazioni consegnate).</div>";
+        h += "<div class='lb' style='margin-top:10px'>GIORNATA " + esc(AG.richiesta) + " (GIORNATA PASSATA SCELTA)</div>";
+        if (GP) {
+          (GP.consegnate || []).forEach(function (c) { h += rigaUff({ squadra: c.squadra, stato: "consegnata", ora: c.ora, account: c.account }); });
+          h += "<div class='mu' style='font-size:12px'>Squadre elencate nella pagina «Formazioni» di quella giornata, con l'orario mostrato dal sito. Le squadre non elencate: " + FVM_ND + ". Se l'elenco comprenda anche formazioni recuperate automaticamente non è ancora verificato (serve una giornata con una squadra senza consegna).</div>";
+        } else h += "<div class='mu' style='font-size:12px'>Elenco della giornata scelta non letto: " + FVM_ND + ".</div>";
+        h += "<div class='lb' style='margin-top:10px'>GIORNATA CORRENTE " + esc(SF.giornata || "?") + " (CONSEGNE IN CORSO)</div>";
       }
+      h += listaUff(SF.righe, "fc"); // RC3 (come Android): riepilogo colorato, squadre dietro MOSTRA SQUADRE
+      // PROVA13 B2: «senza formazione» resta tale anche se la regola della lega usera la formazione precedente (recupero ≠ consegna)
+      if (fvmFcRecuperoAutomatico(rg) && (SF.righe || []).some(function (r) { return r.stato === "non_consegnata"; }))
+        h += "<div class='mu' style='font-size:12px;color:#fbbf24'>Regola della lega: alle squadre senza formazione Fantaclub assegna l'ultima formazione consegnata in precedenza. È un recupero automatico, NON una consegna: restano «senza formazione».</div>";
       if (F.log && F.log.length) h += "<div class='mu' style='font-size:12px;margin-top:6px'>Log consegne: " + F.log.length + " invii letti" + (F.logRidotto ? " (su " + F.logRidotto + ")" : "") + "; l'ultimo per squadra vale come consegna.</div>";
+      // PROVA13 B4: legenda di FVM (fonte di ogni stato); la legenda ufficiale di Fantaclub non e presente nelle pagine lette
+      h += "<div class='mu' style='font-size:11px;margin-top:8px'>🟢 consegnata = presente in «Formazioni consegnate» (orario del sito) · 🔴 senza formazione = elenco ufficiale «Report non consegnate» · ❔ non verificabile = dato non mostrato dal sito (es. formazioni nascoste fino alla scadenza). Legenda ufficiale di Fantaclub: non presente nelle pagine lette.</div>";
       if (SF.righe && SF.righe.length) h += "<button class='bt' style='border-color:#22c55e;color:#4ade80' data-a='uff_fc_wa'>CONDIVIDI SU WHATSAPP</button>";
     }
-    h += "</div><button class='bt' data-a='indietro'>INDIETRO</button>";
+    h += "</div>";
+    } // 1.3.5-RC: fine della sezione Fantaclub
+    // RC3 (come Android): vista separata dell'altra piattaforma ultima, staccata dal pulsante WhatsApp con un divisore
+    if (altraV || adminSbloccato()) h += "<div style='border-top:1px solid #1f3354;margin-top:18px'></div>";
+    if (altraV) h += "<button class='bt' data-a='uff_propria'>TORNA ALLE CONSEGNE DELLA PIATTAFORMA ATTIVA</button>";
+    else if (adminSbloccato()) h += "<button class='bt' data-a='uff_altra'>CONSEGNE DELL'ALTRA PIATTAFORMA (vista separata)</button>";
+    h += "<button class='bt' data-a='indietro'>INDIETRO</button>";
     pannello.innerHTML = h;
     var val = function (id) { var e = pannello.querySelector("#" + id); return e ? e.value : ""; };
     Array.prototype.forEach.call(pannello.querySelectorAll("select"), function (s) {
@@ -5604,26 +7673,50 @@
         if (s.id === "fvm-uff-lega") { v.slug = s.value; v.comp = 0; v.turno = 0; }
         if (s.id === "fvm-uff-comp") { v.comp = Number(s.value) || 0; v.turno = 0; }
         if (s.id === "fvm-uff-turno") v.turno = Number(s.value) || 0;
-        if (s.id === "fvm-uff-fc") v.nl = s.value;
+        if (s.id === "fvm-uff-fc") { v.nl = s.value; v.giornataFc = ""; v.compFc = ""; } // PROVA14: nessuna scelta trascinata in un'altra lega
+        if (s.id === "fvm-uff-gfc") v.giornataFc = s.value; // PROVA14: la scelta e ricordata subito (avviso se il risultato e di un'altra richiesta)
+        if (s.id === "fvm-uff-cfc") v.compFc = s.value;
         sScrivi("uff_sel", v);
-        if (s.id === "fvm-uff-lega" || s.id === "fvm-uff-fc") disegnaUfficiale();
+        if (s.id === "fvm-uff-lega" || s.id === "fvm-uff-fc" || s.id === "fvm-uff-gfc" || s.id === "fvm-uff-cfc") disegnaUfficiale();
       });
     });
     Array.prototype.forEach.call(pannello.querySelectorAll("[data-a]"), function (el) {
       el.addEventListener("click", function (ev) {
         ev.stopPropagation();
         var a = el.getAttribute("data-a");
-        if (a === "indietro") apriPannello();
+        if (a === "indietro") { sScrivi("uff_altra", null); apriPannello(); }
+        // 1.3.5-RC: vista separata dell'altra piattaforma, solo con l'Area Admin sbloccata (richiesta esplicita, registrata in diagnosi)
+        if (a === "uff_altra") { if (adminSbloccato()) { sScrivi("uff_altra", true); log("CONSEGNE UFFICIALI", { vista: "altra piattaforma", attiva: piattaformaScelta() }); } disegnaUfficiale(); return; }
+        if (a === "uff_propria") { sScrivi("uff_altra", null); disegnaUfficiale(); return; }
+        if (a === "uff_det") { var ud = pannello.querySelector("#fvm-uffdet-" + el.getAttribute("data-c")); if (ud) { ud.classList.toggle("aperta"); el.textContent = ud.classList.contains("aperta") ? "NASCONDI SQUADRE ▴" : "MOSTRA SQUADRE ▾"; } return; }
         if (a === "uff_leghe") avviaControlloLega(val("fvm-uff-lega"), val("fvm-uff-comp") || (sLeggi("uff_sel") || {}).comp, val("fvm-uff-turno") || 0);
         if (a === "uff_fc") avviaControlloFcUff(val("fvm-uff-fc"), String(val("fvm-uff-gfc") || "").trim());
-        if (a === "uff_leghe_wa") { var Rw = leggi("uff_leghe_" + val("fvm-uff-lega"), null); if (Rw) condividiTesto(fvmReportLeghe({ lega: Rw.lega, competizione: Rw.competizione, stato: Rw.stato, regola: Rw.regola || leggi("uff_regola_" + Rw.slug, null), quando: new Date(Rw.quando).toLocaleString("it-IT") })); }
-        if (a === "uff_fc_wa") { var Fw = leggi("uff_fc_" + val("fvm-uff-fc"), null); if (Fw) condividiTesto(fvmReportFc({ lega: Fw.lega, stato: Fw.stato, regola: Fw.regola, quando: new Date(Fw.quando).toLocaleString("it-IT") })); }
+        if (a === "uff_leghe_wa") { var Rw = leggi("uff_leghe_" + val("fvm-uff-lega"), null); if (Rw) condividiTesto(fvmReportLeghe({ lega: Rw.lega, competizione: Rw.competizione, stato: Rw.stato, regola: Rw.regola || leggi("uff_regola_" + Rw.slug, null), quando: new Date(Rw.quando).toLocaleString("it-IT") }) +
+            (Rw.perPartita ? "\nℹ️ Letta partita per partita (account non amministratore della lega): solo i dati visibili a questo account." : "")); }
+        if (a === "uff_fc_wa") { var Fw = leggi("uff_fc_" + val("fvm-uff-fc"), null); if (Fw) condividiTesto(fvmReportFc({ lega: Fw.lega, stato: Fw.stato, regola: Fw.regola, quando: new Date(Fw.quando).toLocaleString("it-IT"),
+            giornataRichiesta: Fw.giornataRichiesta || "", giornataPrecedente: Fw.giornataPrecedente || null, competizioni: Fw.competizioni || null, competizione: (sLeggi("uff_sel") || {}).compFc || "" })); }
       });
     });
   }
 
   // ---------------------------------------------------------------- area admin
-  function adminSbloccato() { return leggi("admin", false) === true; }
+  // PROVA14 (sicurezza): lo sblocco dell'Area Admin vale SOLO nel contesto in cui e stato fatto: stessa scheda di Safari
+  // (memoria di sessione), stessa piattaforma, stessa lega FLE, stessa lega di lavoro, stessa lega Fantaclub, stessa epoca
+  // dell'account, al massimo 60 minuti. Cambia uno di questi = Area Admin di nuovo bloccata (serve il codice). Il vecchio
+  // sblocco permanente (admin = true, versioni precedenti) NON vale piu e non viene cancellato. Il codice apre solo le funzioni
+  // di FVM: non da permessi sui siti (restano quelli dell'account collegato) e non identifica la persona.
+  var ADMIN_MAX_MS = 60 * 60000;
+  // 1.3.5-RC: anche l'identità dell'account (impronta) della scheda: account diverso o non riconosciuto = contesto diverso
+  function contestoAdmin() { return [piattaformaScelta(), leggi("lega_sorgente", "") || "", legaLavoro() || "", ((legaFc() || {}).nl || "").toLowerCase(), epocaAccount(), identitaAttuale() || "nessuna"].join("|"); }
+  function adminSbloccato() {
+    var a = sLeggi("admin_sessione");
+    if (!a) return false;
+    var motivo = !(Date.now() - Number(a.at || 0) <= ADMIN_MAX_MS) ? "scaduto (60 minuti)" : a.contesto !== contestoAdmin() ? "contesto cambiato (piattaforma, lega o account)" : "";
+    if (!motivo) return true;
+    sScrivi("admin_sessione", null);
+    log("ADMIN", { esito: "bloccata di nuovo", motivo: motivo });
+    return false;
+  }
   function dataFle(s) {
     var m = String(s || "").match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/);
     if (!m) return null;
@@ -5640,49 +7733,629 @@
   }
   // ultimo controllo valido e ultimo tentativo non valido. Migrazione: un risultato delle versioni precedenti non valido
   // e mostrato come "ultimo tentativo" (la chiave "admin_fle" non viene cancellata: la sostituisce il primo controllo valido)
+  // PROVA15 (sicurezza): contesto di un controllo FLE = epoca dell'account + lega FLE (squadra) dell'accesso che l'ha letto
+  // 1.3.5-RC: contesto = IDENTITÀ dell'account (impronta) + lega FLE; senza identità valida nessun contesto (nessun dato FLE mostrato)
+  function contestoFle() { var id = identitaAttuale(); return id ? id + "|" + (leggi("lega_sorgente", "") || "") : ""; }
+  // ruolo FLE dimostrato dal sito in un controllo: lettura riservata agli amministratori accettata (competizioni lette per intero,
+  // nessuna letta partita per partita) = amministratore; anche una sola competizione letta partita per partita = partecipante
+  function ruoloFleDaComps(comps) {
+    comps = Array.isArray(comps) ? comps : [];
+    if (comps.some(function (c) { return c && c.partite; })) return "partecipante";
+    return comps.some(function (c) { return c && Array.isArray(c.lineups); }) ? "amministratore" : "non_verificato";
+  }
+  function ruoloFleDi(r) { return r && (r.ruoloFle === "amministratore" || r.ruoloFle === "partecipante") ? r.ruoloFle : "non_verificato"; }
+  function testoRuoloFle(ruolo, DF) {
+    var n = DF && DF.nascosti || 0, altri = n ? " (" + n + " controlli di altri accessi o versioni precedenti non mostrati, non cancellati)" : "";
+    return ruolo === "amministratore" ? "Ruolo FLE: amministratore, confermato dal sito nell'ultimo controllo di questo accesso." + altri
+      : ruolo === "partecipante" ? "Ruolo FLE: il sito NON riconosce questo account come amministratore FLE (lettura riservata rifiutata): riepilogo amministrativo non mostrato." + altri
+      : "Ruolo FLE non ancora verificato per questo accesso: nessun riepilogo mostrato finché il controllo (sola lettura) non lo conferma." + altri;
+  }
   function datiFle() {
     var v = leggi("admin_fle", null), t = leggi("admin_fle_tentativo", null), ms = function (x) { return x ? Date.parse(x.at || "") || 0 : 0; };
+    // PROVA15: solo i controlli di QUESTO accesso e contesto; gli altri restano in memoria ma non si mostrano
+    var cx = contestoFle(), nascosti = 0;
+    if (v && (!cx || v.fvmContesto !== cx)) { v = null; nascosti++; } // 1.3.5-RC: senza identita nessun risultato
+    if (t && (!cx || t.fvmContesto !== cx)) { t = null; nascosti++; }
     if (v && !fleControlloValido(v)) { if (!t || ms(v) > ms(t)) t = v; v = null; }
-    return { valido: v, tentativo: t, mostrato: v || t, recente: v && t && ms(t) > ms(v) ? t : null, ultimo: Math.max(ms(v), ms(t)) };
+    return { valido: v, tentativo: t, mostrato: v || t, recente: v && t && ms(t) > ms(v) ? t : null, ultimo: Math.max(ms(v), ms(t)), nascosti: nascosti };
   }
   // Stati per squadra: lu = formazione presente su FLE · gioca senza lu = competizione LETTA, nessuna formazione ·
   // nonLetta = competizione NON letta (errore): "non verificata", mai "non schierata" · gioca=false = non gioca.
   // Competizioni senza turno nella giornata (fuori) non rendono "in gioco" le loro squadre.
+  // PROVA5: competizione letta PARTITA PER PARTITA: squadre senza dati prima dell'inizio o di partite non lette -> motivo
+  // del DA VERIFICARE (mai "mancante"); vuoto per la lettura cumulativa e per i controlli delle versioni precedenti
+  function motiviNonVisibiliFle(c) {
+    var m = {};
+    if (!c || !c.partite) return m;
+    (c.nascoste || []).forEach(function (t) { m[Number(t)] = "formazione non visibile al tuo account prima dell'inizio"; });
+    (c.partiteNonLette || []).forEach(function (t) { m[Number(t)] = "partita non letta"; });
+    return m;
+  }
+  // A1: squadra in gioco con la sola formazione "Recuperata dal Server" (nessuna consegna del partecipante)
+  function fleRecuperata(x) { return !!(x && x.info && x.info.gioca && !x.info.lu && x.info.rec); }
   function riepilogoFle(r) {
     if (!r) return null;
-    var perTid = {};
+    var perTid = {}, classifiche = [];
     (r.comps || []).forEach(function (c) {
+      // 1.3.5: Ranking e competizioni di natura da verificare esclusi SEMPRE, anche nei controlli salvati dalla 1.3.4
+      var nat = c.natura || naturaCompetizione(c);
+      if (nat !== "obbligo") { classifiche.push({ id: Number(c.id), nome: String(c.name || c.id), natura: nat }); return; }
       if (c.fuori) return;
       var letta = Array.isArray(c.lineups);
       // non letta solo se marcata "errore"; nei risultati delle versioni precedenti lineups null = competizione senza turno
       if (!letta && !c.errore) return;
+      // 1.3.5 (collaudo XR): calendario incerto (turno senza partite) o squadra senza avversario: "non verificata", mai mancante
+      var soli = (c.soli || []).map(Number), nv = motiviNonVisibiliFle(c);
       (c.tmids || []).forEach(function (t) {
-        var k = String(t), x = perTid[k];
-        if (!x) perTid[k] = { gioca: true, lu: null, nonLetta: !letta };
-        else if (!letta && !x.lu) x.nonLetta = true;
+        var k = String(t), x = perTid[k], dubbio = !letta || !!c.calIncerto || soli.indexOf(Number(t)) >= 0 || !!nv[Number(t)];
+        if (!x) { perTid[k] = { gioca: true, lu: null, nonLetta: dubbio }; if (letta && dubbio) perTid[k].incerta = true; if (letta && nv[Number(t)]) perTid[k].motivoNV = nv[Number(t)]; }
+        else if (dubbio && !x.lu) { x.nonLetta = true; if (letta) x.incerta = true; if (letta && nv[Number(t)] && !x.motivoNV) x.motivoNV = nv[Number(t)]; }
       });
-      if (letta) c.lineups.forEach(function (l) { perTid[String(l.tid)] = { gioca: true, lu: l, nonLetta: false }; });
+      // 1.3.5: "Sconfitta a tavolino" (act 3, stato ufficiale) non e una formazione presente
+      // A1: "Recuperata dal Server" (act 4) = formazione NON consegnata dal partecipante: mai contata tra le consegnate
+      // (stato RECUPERATA, rosso, conteggio separato); una formazione consegnata in un'altra competizione resta la consegna
+      if (letta) c.lineups.forEach(function (l) {
+        if (l.act === 3) return;
+        var k = String(l.tid);
+        if (l.act === 4) { if (!(perTid[k] && perTid[k].lu)) perTid[k] = { gioca: true, lu: null, rec: l, nonLetta: false }; return; }
+        perTid[k] = { gioca: true, lu: l, nonLetta: false };
+      });
     });
     var leghe = {};
     SQUADRE.forEach(function (t) {
       var x = perTid[String(t[2])] || { gioca: false, lu: null, nonLetta: false };
       (leghe[t[0]] = leghe[t[0]] || []).push({ squadra: t[1], info: x });
     });
-    function rango(x) { return x.info.gioca && !x.info.lu && !x.info.nonLetta ? 0 : x.info.nonLetta && !x.info.lu ? 1 : x.info.lu ? 2 : 3; }
+    function rango(x) { return fleRecuperata(x) || (x.info.gioca && !x.info.lu && !x.info.nonLetta) ? 0 : x.info.nonLetta && !x.info.lu ? 1 : x.info.lu ? 2 : 3; }
     var lista = Object.keys(leghe).sort().map(function (L) {
       return { lega: L, squadre: leghe[L].sort(function (a, b) { return rango(a) - rango(b) || String(a.squadra).localeCompare(String(b.squadra)); }) };
     });
     var tutte = [].concat.apply([], lista.map(function (L) { return L.squadre; }));
     var giocano = tutte.filter(function (x) { return x.info.gioca; }).length;
-    var nonVerificate = tutte.filter(function (x) { return x.info.gioca && !x.info.lu && x.info.nonLetta; }).length;
+    var nonVerificate = tutte.filter(function (x) { return x.info.gioca && !x.info.lu && !fleRecuperata(x) && x.info.nonLetta; }).length;
     return { mday: r.mday, inizio: inizioGiornataFle(r.mstr), lista: lista, giocano: giocano, consegnate: tutte.filter(function (x) { return x.info.lu; }).length,
-      nonVerificate: nonVerificate, mancanti: tutte.filter(function (x) { return x.info.gioca && !x.info.lu && !x.info.nonLetta; }).length, lette: giocano - nonVerificate,
-      completo: fleControlloValido(r), errori: r.errors || [], at: r.at };
+      recuperate: tutte.filter(fleRecuperata).length,
+      nonVerificate: nonVerificate, mancanti: tutte.filter(function (x) { return x.info.gioca && !x.info.lu && !fleRecuperata(x) && !x.info.nonLetta; }).length, lette: giocano - nonVerificate,
+      completo: fleControlloValido(r), errori: r.errors || [], at: r.at, classifiche: classifiche };
+  }
+  // 1.3.5: nomi SOLO delle squadre iscritte su FLE che non sono nella tabella delle 80 (una lettura, solo se servono;
+  // mai le squadre-lega note); un errore non cambia l'esito del controllo
+  function nomiSconosciute(r) {
+    var tab = SQUADRE.map(function (t) { return Number(t[2]); }), extra = [];
+    (r.iscrittePerComp || []).forEach(function (c) {
+      if (!c.tmids.some(function (t) { return tab.indexOf(t) >= 0; })) return;
+      c.tmids.forEach(function (t) { if (tab.indexOf(t) < 0 && squadreLegaFle().indexOf(t) < 0 && extra.indexOf(t) < 0) extra.push(t); });
+    });
+    if (!extra.length) return Promise.resolve();
+    // al massimo 8 s: i nomi sono solo un aiuto, il controllo non deve mai scadere per loro
+    var limiteNomi = new Promise(function (ok, no) { setTimeout(function () { no(new Error("tempo scaduto")); }, 8000); });
+    return Promise.race([getApi("/onboarding/v1/invitation/participants?pageNumber=1&pageSize=1000", true), limiteNomi]).then(function (j) {
+      var nomi = {};
+      (Array.isArray(j) ? j : []).forEach(function (x) { if (x && extra.indexOf(Number(x.teamId)) >= 0) nomi[Number(x.teamId)] = String(x.teamName || "").slice(0, 60); });
+      r.nomiFle = nomi;
+    }).catch(function (e) { r.nomiFle = {}; log("FLE CHECK STEP", { stage: "partecipanti", esito: "errore", http: e && e.http || 0 }); });
+  }
+  // 1.3.5: squadre-lega FLE (una per lega, "sourceLeagueFleTid" della tabella Android 1.3.1): partecipano al Ranking di
+  // Lega, non sono squadre dei giocatori. TOTA ITALIA: campo vuoto nella tabella, come su Android (non aggiunto).
+  function squadreLegaFle() { return [7983281, 7983232, 7983133, 7983387, 7983483, 7983326, 7984246]; }
+  // 1.3.5 CONTROLLO TABELLA (come Android 1.3.1 controlloTabella): squadre della tabella ISCRITTE alle competizioni FLE
+  // attive, che NON e la consegna. Confronto solo tra squadre partecipanti:
+  //  - competizione TRA SQUADRE-LEGA (Ranking di Lega): nessuna squadra della tabella e almeno meta degli identificativi
+  //    gia noti come squadre-lega -> esclusa, riga informativa;
+  //  - ogni altra competizione: i suoi identificativi sconosciuti sono differenze reali (mai nascoste);
+  //  - le squadre-lega note non sono mai "squadre sconosciute". La tabella non viene MAI corretta in automatico.
+  // I controlli salvati prima della 1.3.5 (senza iscrittePerComp) non sono confrontabili: "premi AGGIORNA".
+  function controlloTabella(r) {
+    if (!r || !Array.isArray(r.iscrittePerComp) || !r.iscrittePerComp.length) return { disponibile: false };
+    var tab = SQUADRE.map(function (t) { return Number(t[2]); }), leghe = squadreLegaFle(), isc = [], extra = [], visti = {}, compLeghe = [], nomi = r.nomiFle || {};
+    r.iscrittePerComp.forEach(function (c) {
+      var ids = (c && Array.isArray(c.tmids) ? c.tmids : []).map(Number).filter(Boolean);
+      if (!ids.length) return;
+      var inTab = ids.filter(function (x) { return tab.indexOf(x) >= 0; }).length, noteLeghe = ids.filter(function (x) { return leghe.indexOf(x) >= 0; }).length;
+      if (!inTab && noteLeghe * 2 >= ids.length) { compLeghe.push({ id: Number(c.id), nome: String(c.nome || "competizione " + c.id), n: ids.length }); return; }
+      ids.forEach(function (x) {
+        if (tab.indexOf(x) >= 0) { if (isc.indexOf(x) < 0) isc.push(x); }
+        else if (leghe.indexOf(x) < 0 && !visti[x]) { visti[x] = true; extra.push({ fleTid: x, nome: String(nomi[x] || ""), comp: String(c.nome || "") }); }
+      });
+    });
+    var mancanti = SQUADRE.filter(function (t) { return isc.indexOf(Number(t[2])) < 0; }).map(function (t) { return { squadra: t[1], lega: t[0], fleTid: Number(t[2]) }; });
+    return { disponibile: true, totale: SQUADRE.length, presenti: SQUADRE.length - mancanti.length, mancanti: mancanti, extra: extra, competizioniLeghe: compLeghe };
+  }
+  // 1.3.5: riquadro dell'Area Admin per il controllo della tabella (dettagli dietro MOSTRA DETTAGLI)
+  function cartaTabella(CT) {
+    var h = "<div class='cd'><div class='lb'>SQUADRE DELLA TABELLA ISCRITTE SU FLE</div>";
+    if (!CT || !CT.disponibile) return h + "<div class='mu' style='margin-top:6px'>Dato non disponibile per questo controllo: premi AGGIORNA.</div></div>";
+    var tutto = !CT.mancanti.length && !CT.extra.length;
+    h += "<div style='font-size:18px;font-weight:900;margin-top:6px;color:" + (tutto ? "#4ade80" : "#fbbf24") + "'>" + CT.presenti + "/" + CT.totale + " iscritte" + (tutto ? " ✓" : "") + "</div>" +
+      "<div class='mu'>Iscrizione alle competizioni FLE attive: NON è la consegna della formazione (quella è nel conteggio delle consegnate).</div>";
+    if (CT.mancanti.length) h += "<div style='color:#fbbf24;margin-top:6px;font-size:13px'>" + CT.mancanti.length + " squadre della tabella non risultano iscritte su FLE.</div>";
+    if (CT.extra.length) h += "<div style='color:#fbbf24;margin-top:6px;font-size:13px'>" + CT.extra.length + " squadre iscritte su FLE non sono nella tabella delle 80.</div>";
+    if (CT.competizioniLeghe.length) h += "<div class='mu' style='margin-top:6px'>ℹ️ " + esc(CT.competizioniLeghe.map(function (c) { return c.nome; }).join(", ")) + ": competizione tra squadre-lega (una per lega), esclusa dal confronto.</div>";
+    if (CT.mancanti.length || CT.extra.length) {
+      h += "<button class='bt' data-a='tab_dettagli'>MOSTRA DETTAGLI ▾</button><div id='fvm-tabdet' class='panchinaDet'>";
+      CT.mancanti.forEach(function (x) { h += "<div class='mu' style='margin-top:4px'>• Non iscritta: " + esc(x.squadra) + " (" + esc(x.lega) + ", FLE " + x.fleTid + ")</div>"; });
+      CT.extra.forEach(function (x) { h += "<div class='mu' style='margin-top:4px'>• Non in tabella: " + esc(x.nome || "squadra FLE " + x.fleTid) + " (FLE " + x.fleTid + (x.comp ? ", " + esc(x.comp) : "") + ")</div>"; });
+      h += "<div class='mu' style='margin-top:6px'>Le differenze vengono solo segnalate: la tabella non viene mai corretta in automatico.</div></div>";
+    }
+    return h + "</div>";
+  }
+  // ================================================================ 1.3.5 (collaudo XR) CONSEGNE FLE PER COMPETIZIONE
+  // Solo i dati dell'ultimo controllo dell'Area Admin (nessuna lettura in piu). Una squadra puo avere da 0 a piu competizioni
+  // nella stessa giornata ed essere eliminata da una e continuare nelle altre. Per ogni competizione e squadra:
+  //  consegnata    = formazione presente su FLE (stato ufficiale dal campo act, come Android 1.3.1)
+  //  mancante      = squadra in campo nel turno (partite del calendario), nessuna formazione al momento del controllo,
+  //                  oppure "Sconfitta a tavolino" (act 3) / giornata calcolata senza formazione (stati ufficiali)
+  //  non_in_gioco  = iscritta alla competizione ma senza partita nel turno (eliminata, non partecipante) o competizione
+  //                  senza turno in questa giornata: MAI una mancata consegna
+  //  da_verificare = competizione non letta, turno senza partite (calendario incerto), squadra senza avversario, stato
+  //                  non determinabile: MAI "mancante"
+  // Stati ufficiali con fvmStatoLeghe (identica ad Android 1.3.1; FLE e una lega Classic: ruoli P/D/C/A). Ranking esclusi.
+  function consegnePerCompetizione(r) {
+    if (!r || !Array.isArray(r.comps) || !r.comps.length) return null;
+    var nomi = {}, extraNomi = r.nomiFle || {};
+    SQUADRE.forEach(function (t) { nomi[Number(t[2])] = { squadra: t[1], lega: t[0] }; });
+    var nome = function (tid) { return nomi[tid] ? nomi[tid].squadra : extraNomi[tid] ? String(extraNomi[tid]) : "squadra FLE " + tid; };
+    var iscr = null;
+    if (Array.isArray(r.iscrittePerComp)) { iscr = {}; r.iscrittePerComp.forEach(function (c) { iscr[Number(c.id)] = (c.tmids || []).map(Number).filter(Boolean); }); }
+    var mday = Number(r.mday || 0), ora = Date.parse(r.at || "") || Date.now(), inizioG = inizioGiornataFle(r.mstr); // RC3 (come Android): inizio ufficiale della giornata
+    var comps = [], classifiche = [], perSq = {};
+    function segna(tid, stato, C) {
+      var x = perSq[tid] = perSq[tid] || { tid: tid, squadra: nome(tid), lega: nomi[tid] ? nomi[tid].lega : "", consegnata: [], mancante: [], in_attesa: [], recuperata: [], da_verificare: [], non_in_gioco: [] };
+      x[stato].push(C.nome);
+    }
+    r.comps.forEach(function (c) {
+      var id = Number(c.id), nat = c.natura || naturaCompetizione(c);
+      if (nat !== "obbligo") { classifiche.push({ id: id, nome: String(c.name || id), natura: nat }); return; }
+      var C = { id: id, nome: String(c.name || "competizione " + id), turno: Number(c.round || 0), calcolato: c.calc === true, ufficiali: Array.isArray(c.matches),
+        iscritte: iscr && iscr[id] ? iscr[id].length : null, righe: [], conta: { consegnata: 0, mancante: 0, in_attesa: 0, recuperata: 0, da_verificare: 0, non_in_gioco: 0 }, nota: "", fase: "",
+        partite: !!c.partite }; // PROVA5: competizione letta partita per partita
+      var inTurno = {}, nvC = motiviNonVisibiliFle(c);
+      if (c.fuori) C.nota = "nessun turno in questa giornata";
+      else {
+        var letta = Array.isArray(c.lineups), incerto = !!c.calIncerto, soli = (c.soli || []).map(Number), squadre = {};
+        (c.tmids || []).forEach(function (t) { squadre[Number(t)] = { nome: nome(Number(t)) }; });
+        var S = fvmStatoLeghe({ turno: { matchDay: C.turno, championshipMatchDay: mday, matches: incerto || !C.ufficiali ? [] : c.matches.map(function (m) { return { tIdH: m[0], tIdA: m[1] }; }) },
+          formazioni: letta ? c.lineups : null, formazioniErrore: letta ? "" : "competizione non letta" + (c.http ? " (HTTP " + c.http + ")" : ""), squadre: squadre,
+          nonCalcolate: C.calcolato ? [] : [C.turno], giornataSerieA: mday, inizioGiornata: r.mstr || "", ora: ora, tipoGioco: C.ufficiali ? "classic" : "" });
+        C.fase = S.fase;
+        if (!letta) C.nota = "competizione non letta: stato delle squadre da verificare";
+        else if (incerto) C.nota = "turno senza partite nel calendario: chi deve giocare non è certo";
+        S.righe.forEach(function (x) {
+          var tid = Number(x.tid), st, det = "";
+          inTurno[tid] = true;
+          if (x.stato === "tavolino") { st = "mancante"; det = x.statoUfficiale || "Sconfitta a tavolino"; }
+          // A1: "Recuperata dal Server" = nessuna consegna del partecipante: stato RECUPERATA (rosso), mai CONSEGNATA
+          else if (x.stato === "recuperata") { st = "recuperata"; det = (x.ora || "") + " · " + (x.statoUfficiale || "Recuperata dal Server"); }
+          else if (x.stato === "presente") {
+            st = "consegnata"; det =(x.ora || "") + (x.statoUfficiale && C.ufficiali ? " · " + x.statoUfficiale : "") + (x.salvataggi > 1 ? " · " + x.salvataggi + " salvataggi" : "") + (x.invisibile ? " · invisibile" : "");
+          }
+          else if (incerto || soli.indexOf(tid) >= 0) { st = "da_verificare"; det = incerto ? "calendario incerto" : "senza avversario nel turno"; }
+          else if (nvC[tid]) { st = "da_verificare"; det = nvC[tid]; } // PROVA5: lettura per partita, dati non sufficienti
+          else if (x.stato === "assente") { st = "mancante"; det = x.statoUfficiale || "nessuna formazione (turno calcolato)"; }
+          // RC3 (come Android): senza formazione PRIMA dell'inizio ufficiale (o con inizio non letto) = IN ATTESA, mai mancata consegna
+          else if (x.stato === "in_attesa") { if (inizioG && ora >= inizioG.getTime()) { st = "mancante"; det = "nessuna formazione al momento del controllo (giornata iniziata)"; } else { st = "in_attesa"; det = inizioG ? "non ancora consegnata (giornata non iniziata)" : "inizio della giornata non letto: non ancora verificabile"; } }
+          else { st = "da_verificare"; det = x.nota || FVM_ND; }
+          C.righe.push({ tid: tid, squadra: nome(tid), lega: nomi[tid] ? nomi[tid].lega : "", stato: st, det: det, evidenzia: !!x.evidenzia || x.stato === "recuperata" });
+          C.conta[st]++; segna(tid, st, C);
+        });
+      }
+      // iscritte senza partita nel turno (o competizione senza turno): non tenute a consegnare
+      if (iscr && iscr[id]) iscr[id].forEach(function (tid) {
+        if (inTurno[tid]) return;
+        C.righe.push({ tid: tid, squadra: nome(tid), lega: nomi[tid] ? nomi[tid].lega : "", stato: "non_in_gioco", det: c.fuori ? "competizione senza turno in questa giornata" : "iscritta, senza partita in questo turno" });
+        C.conta.non_in_gioco++; segna(tid, "non_in_gioco", C);
+      });
+      var P = { mancante: 0, recuperata: 1, in_attesa: 2, da_verificare: 3, consegnata: 4, non_in_gioco: 5 };
+      C.righe.sort(function (a, b) { return P[a.stato] - P[b.stato] || String(a.squadra).localeCompare(String(b.squadra)); });
+      C.tenute = C.conta.consegnata + C.conta.mancante + C.conta.in_attesa + C.conta.recuperata + C.conta.da_verificare;
+      comps.push(C);
+    });
+    comps.sort(function (a, b) { return a.nome.localeCompare(b.nome); });
+    var squadre = Object.keys(perSq).map(function (k) { var x = perSq[k]; x.tenuta = x.consegnata.length + x.mancante.length + x.in_attesa.length + x.recuperata.length + x.da_verificare.length; return x; });
+    // consegnata in almeno una competizione e mancante, recuperata dal server (A1) o da verificare in un'altra della stessa giornata
+    var parziali = squadre.filter(function (x) { return x.consegnata.length && (x.mancante.length || x.in_attesa.length || x.recuperata.length || x.da_verificare.length); })
+      .sort(function (a, b) { return (b.mancante.length + b.recuperata.length) - (a.mancante.length + a.recuperata.length) || String(a.squadra).localeCompare(String(b.squadra)); });
+    return { mday: mday, at: r.at, comps: comps, classifiche: classifiche, squadre: perSq, parziali: parziali, ufficiali: comps.some(function (C) { return C.ufficiali; }),
+      iscritteNote: !!iscr, adminPagina: r.adminPagina };
+  }
+  // riquadro dell'Area Admin: un blocco per competizione (dettagli dietro MOSTRA), poi le consegne parziali
+  // RC3 (come Android): opz.compatto = una riga per competizione (Area Admin); opz.soloComp = dettaglio di UNA competizione (schermata turni)
+  function cartaCompetizioni(CC, opz) {
+    opz = opz || {};
+    // A1: "recuperata" con simbolo e colore della legenda gia esistente delle CONSEGNE UFFICIALI (🔴 Recuperata dal Server)
+    var STATI_COMP = { consegnata: ["🟢", "CONSEGNATA", "#4ade80"], mancante: ["🔴", "MANCANTE", "#f87171"], in_attesa: ["⏳", "IN ATTESA", "#fbbf24"], recuperata: ["🔴", "RECUPERATA DAL SERVER", "#f87171"], da_verificare: ["⚪", "DA VERIFICARE", "#aab3c2"], non_in_gioco: ["·", "NON IN GIOCO", "#7d8799"] };
+    var h = "<div class='cd'><div class='lb'>CONSEGNE FLE PER COMPETIZIONE</div>";
+    if (!CC || !CC.comps.length) return h + "<div class='mu' style='margin-top:6px'>" + (CC && CC.classifiche.length ? "Nessuna competizione con formazioni da consegnare." : "Dato non disponibile: premi AGGIORNA.") + "</div></div>";
+    h += "<div class='mu' style='margin-top:4px'>" + esc(CC.mday) + "ª giornata di Serie A — giornata generale FLE · solo i dati dell'ultimo controllo. Una squadra può giocare più competizioni nello stesso turno: ognuna ha la sua consegna.</div>";
+    if (!CC.ufficiali) h += "<div style='color:#fbbf24;margin-top:6px;font-size:13px'>Controllo salvato da una versione precedente: stati ufficiali e partite del turno non disponibili, premi AGGIORNA.</div>";
+    if (!CC.iscritteNote) h += "<div class='mu' style='margin-top:4px'>Squadre iscritte non disponibili per questo controllo: le NON IN GIOCO non sono elencate.</div>";
+    if (CC.adminPagina === false) h += "<div style='color:#fbbf24;margin-top:6px;font-size:13px'>Pagina FLE letta senza l'icona admin: prima della scadenza le formazioni delle altre squadre potrebbero non essere visibili. Conferma le mancanti dopo l'inizio della giornata.</div>";
+    CC.comps.filter(function (C) { return !opz.soloComp || Number(C.id) === Number(opz.soloComp); }).forEach(function (C) {
+      var col = C.nota && !C.tenute ? "#aab3c2" : C.conta.mancante || C.conta.recuperata ? "#f87171" : C.conta.in_attesa || C.conta.da_verificare ? "#fbbf24" : "#4ade80";
+      h += "<div style='border-top:1px solid #1f3354;margin-top:10px;padding-top:8px'>" +
+        "<div style='display:flex;justify-content:space-between;gap:8px'><span style='font-weight:800'>" + esc(C.nome) + (C.turno ? " <span class='mu'>— " + esc(C.turno) + "° turno FLE" + (C.calcolato ? " (calcolato)" : "") + "</span>" : "") + "</span>" +
+        "<span style='font-weight:900;color:" + col + "'>" + (C.tenute ? C.conta.consegnata + "/" + C.tenute : "—") + "</span></div>" +
+        "<div class='mu' style='font-size:12px'>" + (C.iscritte != null ? "iscritte " + C.iscritte + " · " : "") + "in gioco " + C.tenute + " · consegnate " + C.conta.consegnata + " · mancanti " + C.conta.mancante +
+        (C.conta.in_attesa ? " · in attesa " + C.conta.in_attesa : "") + (C.conta.recuperata ? " · recuperate dal server " + C.conta.recuperata : "") + (C.conta.da_verificare ? " · da verificare " + C.conta.da_verificare : "") + (C.conta.non_in_gioco ? " · non in gioco " + C.conta.non_in_gioco : "") + "</div>" +
+        (C.nota ? "<div style='color:#fbbf24;font-size:12px'>" + esc(C.nota) + "</div>" : "") +
+        (C.partite ? "<div class='mu' style='font-size:12px'>Letta partita per partita (account senza privilegi admin FLE): solo i dati visibili al tuo account.</div>" : "");
+      if (!opz.compatto && C.righe.length) {
+        h += "<button class='bt' style='margin-top:6px;padding:8px' data-a='comp_det' data-c='" + C.id + "'>MOSTRA SQUADRE ▾</button><div id='fvm-comp-" + C.id + "' class='panchinaDet'>";
+        C.righe.forEach(function (x) {
+          var e = STATI_COMP[x.stato];
+          h += "<div style='display:flex;justify-content:space-between;gap:8px;margin-top:5px;font-size:13px'><span style='color:" + e[2] + ";font-weight:700'>" + e[0] + " " + esc(x.squadra) +
+            (x.lega ? "<span class='mu' style='font-weight:400'> · " + esc(x.lega) + "</span>" : "") + "</span><span class='mu' style='text-align:right" + (x.stato === "recuperata" ? ";color:" + e[2] : x.evidenzia ? ";color:#fbbf24" : "") + "'>" + e[1] + (x.det ? " · " + esc(x.det) : "") + "</span></div>";
+        });
+        // 1.3.5 (2° collaudo XR): riepilogo di QUESTA competizione, stesso meccanismo di CONSEGNE UFFICIALI (condividiTesto)
+        h += "<button class='bt' style='border-color:#22c55e;color:#4ade80' data-a='comp_wa' data-c='" + C.id + "'>CONDIVIDI SU WHATSAPP</button>";
+        h += "</div>";
+      }
+      h += "</div>";
+    });
+    if (opz.compatto) h += "<button class='bt' style='margin-top:10px' data-a='turni'>SQUADRE PER COMPETIZIONE E TURNO ›</button>";
+    if (!opz.soloComp && CC.parziali.length) {
+      h += "<div style='border-top:1px solid #1f3354;margin-top:10px;padding-top:8px'><div style='color:#fbbf24;font-weight:800'>⚠️ CONSEGNE PARZIALI · " + CC.parziali.length + " squadre</div>" +
+        "<div class='mu' style='font-size:12px'>Formazione presente in una competizione ma non in un'altra della stessa giornata.</div>";
+      CC.parziali.forEach(function (x) {
+        h += "<div style='margin-top:5px;font-size:13px'><b>" + esc(x.squadra) + "</b>" + (x.lega ? "<span class='mu'> · " + esc(x.lega) + "</span>" : "") + "<br><span style='color:#4ade80'>✓ " + esc(x.consegnata.join(", ")) + "</span>" +
+          (x.mancante.length ? " <span style='color:#f87171'>✗ " + esc(x.mancante.join(", ")) + "</span>" : "") + (x.in_attesa && x.in_attesa.length ? " <span style='color:#fbbf24'>⏳ in attesa: " + esc(x.in_attesa.join(", ")) + "</span>" : "") +
+          (x.recuperata.length ? " <span style='color:#f87171'>🔴 recuperata dal server: " + esc(x.recuperata.join(", ")) + "</span>" : "") + (x.da_verificare.length ? " <span style='color:#aab3c2'>? " + esc(x.da_verificare.join(", ")) + "</span>" : "") + "</div>";
+      });
+      h += "</div>";
+    }
+    if (CC.classifiche.length) h += "<div class='mu' style='margin-top:8px'>ℹ️ " + esc(testoClassifiche(CC.classifiche)) + "</div>";
+    return h + "<div class='mu' style='font-size:11px;margin-top:8px'>🟢 consegnata · 🔴 mancante (in campo nel turno, giornata iniziata, nessuna formazione) · ⏳ in attesa (prima dell'inizio: non è una mancata consegna) · 🔴 recuperata dal server (non consegnata dal partecipante) · ⚪ da verificare · NON IN GIOCO = senza partita nel turno, mai una mancata consegna.</div></div>";
+  }
+  // ================================================================ RC3 · CONSEGNE FLE PER COMPETIZIONE E TURNO (come Android 1.3.5)
+  // Funzioni con testo IDENTICO ad Android (fleCheckDiag.js, vistaConsegne.js): selettore, stati del turno, riepilogo, testo WhatsApp.
+  function fleSelettore(r, letture) {
+    const mday = Number(r && r.mday || 0), L = letture || {};
+    return (r && Array.isArray(r.comps) ? r.comps : []).filter(c => c && Number(c.id) && !c.del).map(c => {
+      const turni = (Array.isArray(L[c.id]) && L[c.id].length ? L[c.id] : Array.isArray(c.turni) ? c.turni : []).filter(t => t && Number(t.g)).slice().sort((a, b) => a.g - b.g);
+      const prop = turni.find(t => mday && t.sa === mday) || turni.filter(t => mday && t.sa < mday).slice(-1)[0] || turni[0] || null;
+      return {id: Number(c.id), nome: String(c.name || c.nome || c.id), turni, proposto: prop ? prop.g : 0, natura: c.ranking ? (c.natura || "ranking") : naturaCompetizione(c)};
+    });
+  }
+  function fleStatoTurno(res, teamMap, statoLeghe, ora) {
+    if (!res || !res.turno || typeof statoLeghe !== "function") return null;
+    // 1.3.1: Ranking (o natura da verificare): nessuno stato di consegna, solo le informazioni di calendario
+    const nat = naturaCompetizione({id: res.comp, name: res.nomeComp || ""});
+    if (nat !== "obbligo" || res.ranking) return {fase: "ranking", natura: res.ranking ? (res.natura || "ranking") : nat, ranking: true, giornataLega: Number(res.turno.matchDay || 0), giornataSerieA: Number(res.turno.championshipMatchDay || 0), inizio: "", righe: [], conta: {}, squadre: 0, dettaglio: false, formazioniLette: false, turniTotali: (res.turni || []).length};
+    const t = res.turno, nomi = {};
+    (teamMap || []).forEach(x => { nomi[Number(x.fleTid)] = x; });
+    const squadre = {};
+    (t.matches || []).forEach(m => [m && m.tIdH, m && m.tIdA].forEach(x => {
+      const id = Number(x); if (!id) return; // posti vuoti (Ranking) ignorati
+      const n = nomi[id];
+      squadre[id] = {nome: n ? String(n.sourceTeam) : "squadra FLE " + id, allenatori: []};
+    }));
+    const nonCalcolate = (res.turni || []).filter(x => !x.calc).map(x => x.g);
+    if (!t.calculated && nonCalcolate.indexOf(Number(t.matchDay)) < 0) nonCalcolate.push(Number(t.matchDay));
+    const st = res.status || {};
+    const formazioniLette = Array.isArray(res.formazioni) && !res.formazioniErrore;
+    const S = statoLeghe({turno: t, formazioni: formazioniLette ? res.formazioni : null, formazioniErrore: res.formazioniErrore || "", tipoGioco: res.tipoGioco || "",
+      squadre, nonCalcolate, giornataSerieA: Number(st.mday || 0), inizioGiornata: st.mstr || "", regola: null, ora});
+    S.righe.forEach(x => { const n = nomi[Number(x.tid)]; x.lega = n ? String(n.sourceLeague || "") : ""; });
+    // ordine: problemi prima (assenti, recuperate, tavolino), poi provvisori, attese, non verificabili, presenti, future
+    const P = {assente: 0, recuperata: 1, tavolino: 2, assente_provvisorio: 3, non_verificabile: 4, in_attesa: 5, presente: 6, futura: 7};
+    S.righe.sort((a, b) => ((a.stato in P ? P[a.stato] : 9) - (b.stato in P ? P[b.stato] : 9)) || String(a.squadra).localeCompare(String(b.squadra)));
+    S.turniTotali = (res.turni || []).length;
+    return S;
+  }
+  const STATI_RIEPILOGO = {
+    presente: ["🟢", "presenti", "#4ade80"],
+    consegnata: ["🟢", "consegnate", "#4ade80"],
+    in_attesa: ["⏳", "in attesa", "#fbbf24"],
+    assente_provvisorio: ["🟠", "senza formazione (provvisorio)", "#fbbf24"],
+    assente: ["🔴", "senza formazione", "#f87171"],
+    non_consegnata: ["🔴", "senza formazione (elenco ufficiale)", "#f87171"],
+    recuperata: ["🔴", "recuperate dal server", "#f87171"],
+    tavolino: ["🔴", "a tavolino", "#f87171"],
+    non_verificabile: ["❔", "non verificabili", "#aab3c2"],
+    futura: ["·", "turno futuro", "#7d8799"]
+  };
+  const ORDINE = ["presente", "consegnata", "in_attesa", "assente_provvisorio", "assente", "non_consegnata", "recuperata", "tavolino", "non_verificabile", "futura"];
+  function riepilogoStati(righe) {
+    const n = {};
+    (Array.isArray(righe) ? righe : []).forEach(r => { const k = r && STATI_RIEPILOGO[r.stato] ? r.stato : "non_verificabile"; n[k] = (n[k] || 0) + 1; });
+    return ORDINE.filter(k => n[k]).map(k => ({stato: k, n: n[k], simbolo: STATI_RIEPILOGO[k][0], etichetta: STATI_RIEPILOGO[k][1], colore: STATI_RIEPILOGO[k][2]}));
+  }
+  const FASI_TURNO = {calcolata: "turno calcolato", da_calcolare: "turno passato, non ancora calcolato", consegna_aperta: "consegna aperta (prima della scadenza)",
+    in_corso: "giornata in corso o scadenza non indicata", futura: "turno futuro"};
+  function testoWhatsappTurnoFle({C, S, R, quando, nd}) {
+    if (!C || !S || S.ranking) return "";
+    const ND = nd || "DATO NON DISPONIBILE";
+    const el = st => (S.righe || []).filter(r => r.stato === st);
+    const det = r => [r.ora && r.ora !== ND ? (r.stato === "presente" || r.stato === "recuperata" ? "salvata " : "") + r.ora : "", r.invisibile ? "invisibile" : "",
+      r.modulo ? "modulo " + String(r.modulo).split("").join("-") : "", r.statoUfficiale && r.stato !== "assente" ? r.statoUfficiale : ""].filter(Boolean).join(" · ");
+    const voce = r => "• " + r.squadra + (r.lega ? " (" + r.lega + ")" : "") + (det(r) ? " · " + det(r) : "") + (r.nota ? " · " + r.nota : "");
+    const righe = ["📋 CONSEGNE FLE · " + C.nome,
+      (S.giornataLega || "?") + "° turno FLE · giornata di Serie A " + (S.giornataSerieA || "?") + " · " + (FASI_TURNO[S.fase] || ND) + (S.inizio ? " · inizio " + S.inizio : ""),
+      "Controllo: " + (quando || ND) + " · fonte: FantaLegaEuropa-FLE"];
+    ((R && R.errori) || []).forEach(e => righe.push("⚠️ " + e));
+    if (R && R.formazioniErrore) righe.push("⚠️ formazioni del turno non lette: " + R.formazioniErrore);
+    const rie = riepilogoStati(S.righe);
+    righe.push("", rie.length ? rie.map(x => x.simbolo + " " + x.n + " " + x.etichetta).join(" · ") : "nessuna squadra nel turno", "");
+    [["presente", "🟢 FORMAZIONE PRESENTE"], ["in_attesa", "⏳ IN ATTESA / NON ANCORA VISIBILI"], ["assente_provvisorio", "🟠 SENZA FORMAZIONE · TURNO DA CALCOLARE (PROVVISORIO)"],
+      ["assente", "🔴 SENZA FORMAZIONE · SCADENZA SUPERATA"], ["recuperata", "🔴 RECUPERATE DAL SERVER"], ["tavolino", "🔴 SCONFITTA A TAVOLINO"],
+      ["non_verificabile", "❔ NON VERIFICABILI"], ["futura", "· TURNO FUTURO"]].forEach(([st, tit]) => {
+      const l = el(st); if (!l.length) return;
+      righe.push(tit + " (" + l.length + ")"); l.forEach(r => righe.push(voce(r))); righe.push("");
+    });
+    righe.push("Orari: ora italiana. «In attesa» prima della scadenza non è una mancata consegna; «senza formazione» solo dopo la scadenza (inizio ufficiale della giornata) con le formazioni lette; " +
+      "«recuperata dal server» = formazione non consegnata dal partecipante. Nessun calcolo di jolly o penalità.");
+    return righe.join("\n");
+  }
+  // tabella delle 80 squadre nella forma di Android (fleStatoTurno)
+  function teamMapSafari() { return SQUADRE.map(function (x) { return { sourceLeague: x[0], sourceTeam: x[1], fleTid: x[2], sourceTid: x[3] }; }); }
+  // ultima lettura di OGNI turno letto ("comp:turno" -> risultato), solo dell'account che l'ha letta; al massimo 40 turni
+  var TURNI_ARCH = "fle_turni_arch";
+  function archivioTurni() {
+    var o = leggi(TURNI_ARCH, {}) || {}, n = {}, id = identitaAttuale();
+    if (!id) return n;
+    Object.keys(o).forEach(function (k) { if (o[k] && o[k].turno && o[k].fvmId === id) n[k] = o[k]; });
+    return n;
+  }
+  function archiviaTurno(res) {
+    if (!res || !res.turno || !Number(res.comp)) return;
+    var o = leggi(TURNI_ARCH, {}) || {}, n = {};
+    o[Number(res.comp) + ":" + Number(res.turno.matchDay)] = res;
+    Object.keys(o).sort(function (a, b) { return (Date.parse(o[b].at) || 0) - (Date.parse(o[a].at) || 0); }).slice(0, 40).forEach(function (k) { n[k] = o[k]; });
+    scrivi(TURNI_ARCH, n);
+  }
+  function apriTurni() {
+    monta();
+    chiudiPannello();
+    pannelloPrincipale = false;
+    pannello = document.createElement("div");
+    pannello.className = "ov";
+    radice.appendChild(pannello);
+    disegnaTurni();
+  }
+  function disegnaTurni() {
+    if (!pannello) return;
+    var am = controlloFleAdminAmmesso(), DF = am.ok ? datiFle() : null, r = DF && DF.mostrato, ruolo = r ? ruoloFleDi(r) : "";
+    var h = "<div class='cd'><button class='x' data-a='admin'>INDIETRO</button><div class='lb'>AREA ADMIN · FLE</div><div class='t1'>Consegne FLE</div>" +
+      "<div class='mu'>Competizione e turno a scelta · sola lettura, con l'accesso FLE di questo dispositivo.</div></div>";
+    var fine = function () { pannello.innerHTML = h; eventiTurni(null); };
+    // stesse condizioni dei dati FLE dell'Area Admin (pertinenti e ruolo di amministratore FLE confermato dal sito)
+    if (!am.ok || ruolo !== "amministratore") { h += "<div class='cd'><div class='mu'>" + esc(am.ok ? testoRuoloFle(ruolo, DF) : am.testo) + "</div></div>"; return fine(); }
+    var arch = archivioTurni(), lett = {};
+    Object.keys(arch).forEach(function (k) { var x = arch[k]; if (Array.isArray(x.turni) && x.turni.length) lett[x.comp] = x.turni; });
+    // RC6: giornata corrente = la più recente conosciuta (controllo generale o letture dei turni): il turno proposto passa da solo alla nuova giornata
+    var mdayNoto = Number(r.mday || 0);
+    Object.keys(arch).forEach(function (k) { var x = arch[k]; if (x.status && Number(x.status.mday) > mdayNoto) mdayNoto = Number(x.status.mday); });
+    var sel = fleSelettore(Object.assign({}, r, { mday: mdayNoto }), lett);
+    if (!sel.length) { h += "<div class='cd'><div style='color:#fbbf24'>Elenco delle competizioni FLE non ancora disponibile: torna all'Area Admin, premi AGGIORNA (controllo FLE) e torna qui.</div></div>"; return fine(); }
+    var scelta = sLeggi("turni_sel") || {};
+    var C = sel.filter(function (c) { return c.id === Number(scelta.comp); })[0] || sel[0];
+    var turno = (Number(scelta.comp) === C.id && Number(scelta.turno)) || C.proposto;
+    var R = turno ? arch[C.id + ":" + turno] || null : null;
+    // RC6: il controllo generale vale solo per il turno della SUA giornata (mai mostrato per il turno di una giornata successiva)
+    var saTurno = Number((C.turni.filter(function (t) { return t.g === turno; })[0] || {}).sa || 0);
+    var CC = consegneSicure(r), CG = !R && turno && turno === C.proposto && saTurno && saTurno === Number(r.mday || 0) && CC && CC.comps.some(function (x) { return Number(x.id) === C.id; }) ? CC : null;
+    var obblighi = sel.filter(function (c) { return c.natura === "obbligo"; }), mday = mdayNoto, err = sLeggi("turni_err") || "", tutti = leggi("fle_turni_tutti", null);
+    if (tutti && tutti.fvmId !== identitaAttuale()) tutti = null;
+    h += "<div class='cd'><div class='lb'>COMPETIZIONE (" + sel.length + " attive)</div>" +
+      selUff("fvm-tu-comp", sel.map(function (c) { return [c.id, (c.natura === "ranking" ? "RANKING · " : c.natura === "da_verificare" ? "DA VERIFICARE · " : "") + c.nome]; }), C.id) +
+      "<div class='lb' style='margin-top:8px'>TURNO FLE (giornata di Serie A)</div>" +
+      (C.turni.length ? selUff("fvm-tu-turno", C.turni.map(function (t) { return [t.g, t.g + "° turno · Serie A " + (t.sa || "?") + (mday && t.sa === mday ? " · attuale" : "")]; }), turno)
+        : "<div class='mu' style='color:#fbbf24'>Turni di questa competizione non letti nell'ultimo controllo: AGGIORNA QUESTO TURNO legge il turno della giornata attuale e l'elenco completo dei turni.</div>");
+    if (obblighi.length) h += "<button class='bt' style='border-color:#e2b33c;color:#e2b33c' data-a='tu_tutti'>AGGIORNA TUTTI I TURNI DELLE COMPETIZIONI</button>" +
+      "<div class='mu' style='font-size:11px;margin-top:2px'>Un comando: turno corrente di " + obblighi.length + " competizioni con consegna (Ranking esclusi), una lettura alla volta; letture di meno di 5 minuti riutilizzate. Sola lettura.</div>";
+    if (tutti && Array.isArray(tutti.esiti)) {
+      h += "<div style='border-top:1px solid #1f3354;margin-top:8px;padding-top:6px'><div style='font-weight:800;font-size:13px'>Ultimo AGGIORNA TUTTI: " + esc(dataCompleta(new Date(tutti.at))) + "</div>";
+      tutti.esiti.forEach(function (e) {
+        var col = e.esito === "letto" ? "#4ade80" : e.esito === "riusato" ? "#93c5fd" : e.esito === "annullato" || e.esito === "nessun_turno" ? "#7d8799" : "#f87171";
+        h += "<div class='mu' style='font-size:12px;color:" + col + "'>" + (e.esito === "letto" ? "✓ " : e.esito === "riusato" ? "↺ " : e.esito === "annullato" || e.esito === "nessun_turno" ? "· " : "✗ ") + esc(e.nome) + (e.turno ? " · " + esc(e.turno) + "° turno" : "") + " — " + esc(e.testo || e.esito) + "</div>";
+      });
+      h += "</div>";
+    }
+    if (C.natura !== "obbligo") {
+      h += "<div class='cd' style='margin-top:10px'><div class='lb'>" + (C.natura === "ranking" ? "RANKING · Classifica a punti: nessuna formazione da consegnare" : "NATURA DA VERIFICARE") + "</div><div class='mu'>" +
+        (C.natura === "ranking" ? "Nessuna formazione mancante o in ritardo viene segnalata per questa competizione; i turni sopra sono solo informazioni di calendario."
+          : "Nome o identificativo non corrispondono a un Ranking noto: finché non è verificata non viene trattata come competizione con obbligo di consegna.") + "</div></div>";
+    } else h += "<button class='bt oro' data-a='tu_uno'>AGGIORNA QUESTO TURNO</button>";
+    if (err && C.natura === "obbligo") h += "<div style='color:#f87171;font-size:13px;margin-top:6px'>" + esc(err) + "</div>";
+    // RC5 + RC6: classificazione all'ora EFFETTIVA della lettura (una lettura fatta prima della scadenza resta «in attesa»: va riletta)
+    var S = R ? fleStatoTurno(R, teamMapSafari(), function (I) { return fvmStatoLeghe(Object.assign({}, I, { avvioDistinto: true })); }, Date.parse(R.at) || undefined) : null;
+    if (C.natura === "obbligo" && R && S && !S.ranking) {
+      var ETI = { presente: ["🟢", "Formazione presente", "#4ade80"], assente: ["🔴", "Senza formazione", "#f87171"], recuperata: ["🔴", "Recuperata dal Server", "#f87171"], tavolino: ["🔴", "Sconfitta a tavolino", "#f87171"],
+        assente_provvisorio: ["🟠", "Nessuna formazione · turno non ancora calcolato (provvisorio)", "#fbbf24"], in_attesa: ["⏳", "In attesa / non ancora visibile", "#fbbf24"], futura: ["·", "Turno futuro", "#7d8799"], non_verificabile: ["❔", FVM_ND, "#aab3c2"] };
+      h += "<div style='margin-top:10px;font-weight:800;font-size:15px'>" + esc(C.nome) + " · " + esc(S.giornataLega) + "° turno FLE · giornata Serie A " + esc(S.giornataSerieA) + "</div>" +
+        "<div class='mu'>Stato del turno: " + esc(FASI_TURNO[S.fase] || FVM_ND) + (S.inizio ? " · inizio giornata " + esc(S.inizio) : "") + " · " + esc(S.squadre) + " squadre</div>" +
+        "<div class='mu'>Lettura: " + esc(dataCompleta(new Date(R.at))) + " · strumenti admin nella pagina: " + (R.admin ? "sì (corona)" : "non rilevati") + "</div>";
+      (R.errori || []).concat(R.formazioniErrore ? ["formazioni del turno non lette: " + R.formazioniErrore] : []).forEach(function (e) { h += "<div style='color:#f87171;font-size:13px'>" + esc(e) + "</div>"; });
+      var rie = riepilogoStati(S.righe);
+      h += "<div style='margin-top:6px;font-size:14px;font-weight:800'>" + (rie.length ? rie.map(function (x) { return "<span style='color:" + x.colore + "'>" + x.simbolo + " " + x.n + " " + esc(x.etichetta) + "</span>"; }).join(" · ") : "nessuna squadra nel turno") + "</div>";
+      if ((S.righe || []).length) {
+        h += "<button class='bt' style='margin-top:6px;padding:8px' data-a='tu_det'>MOSTRA SQUADRE ▾</button><div id='fvm-tu-det' class='panchinaDet'>";
+        S.righe.forEach(function (x) {
+          var e = ETI[x.stato] || ETI.non_verificabile, testo = x.statoUfficiale ? (x.stato === "assente" ? x.statoUfficiale + " (turno calcolato)" : x.statoUfficiale) : e[1];
+          var det = [x.ora && x.ora !== FVM_ND ? "salvata " + x.ora : "", x.invisibile ? "invisibile" : "", x.modulo ? "modulo " + String(x.modulo).split("").join("-") : "", x.lega ? x.lega : ""].filter(Boolean).join(" · ");
+          h += "<div style='margin-top:8px;font-size:14px" + (x.evidenzia ? ";background:rgba(248,113,113,0.12);border-radius:8px;padding:4px 6px" : "") + "'><span style='color:" + e[2] + ";font-weight:800'>" + e[0] + " " + esc(x.squadra) + "</span>" +
+            "<div class='mu' style='font-size:12px'>" + esc(testo) + (det ? " · " + esc(det) : "") + (x.nota ? " · " + esc(x.nota) : "") + "</div></div>";
+        });
+        h += "</div><button class='bt' style='border-color:#22c55e;color:#4ade80' data-a='tu_wa'>CONDIVIDI SU WHATSAPP</button>";
+      }
+      h += "<div class='mu' style='font-size:11px;margin-top:8px'>Orari: ora italiana (dati ufficiali in UTC). «Senza formazione» solo dopo la scadenza (inizio ufficiale della giornata) con le formazioni lette correttamente; turni futuri, in consegna o con scadenza non indicata e letture non riuscite non diventano mai mancate consegne.</div>";
+    } else if (C.natura === "obbligo" && CG) {
+      h += "<div style='margin-top:10px;font-weight:800;font-size:13px'>Ultimo risultato valido · controllo generale FLE del " + esc(dataCompleta(new Date(r.at))) + "</div>" + cartaCompetizioni(CG, { soloComp: C.id });
+    } else if (C.natura === "obbligo") {
+      h += "<div class='mu' style='margin-top:8px;color:#fbbf24'>Nessuna lettura di questo turno salvata su questo dispositivo: premi AGGIORNA QUESTO TURNO. Esito NON DISPONIBILE finché non viene letto (mai ricostruito dalle formazioni).</div>";
+    }
+    h += "</div>";
+    pannello.innerHTML = h;
+    eventiTurni({ C: C, turno: turno, R: R, S: S, sel: sel });
+  }
+  function eventiTurni(x) {
+    var ammesso = function () { return controlloFleAdminAmmesso().ok && ruoloFleDi(datiFle().mostrato) === "amministratore"; };
+    Array.prototype.forEach.call(pannello.querySelectorAll("select"), function (s) {
+      s.addEventListener("change", function () {
+        if (s.id === "fvm-tu-comp") sScrivi("turni_sel", { comp: Number(s.value), turno: 0 });
+        if (s.id === "fvm-tu-turno" && x) sScrivi("turni_sel", { comp: x.C.id, turno: Number(s.value) });
+        sScrivi("turni_err", null);
+        disegnaTurni();
+      });
+    });
+    Array.prototype.forEach.call(pannello.querySelectorAll("[data-a]"), function (el) {
+      el.addEventListener("click", function (ev) {
+        if (ev && ev.stopPropagation) ev.stopPropagation();
+        var a = el.getAttribute("data-a");
+        if (a === "admin") { apriAdmin(); return; }
+        if (!x) return;
+        if (a === "tu_det" || a === "comp_det") {
+          var cd = pannello.querySelector(a === "tu_det" ? "#fvm-tu-det" : "#fvm-comp-" + Number(el.getAttribute("data-c")));
+          if (cd) { cd.classList.toggle("aperta"); el.textContent = cd.classList.contains("aperta") ? "NASCONDI SQUADRE ▴" : "MOSTRA SQUADRE ▾"; }
+          return;
+        }
+        // condivisione e letture FLE solo nelle stesse condizioni della visualizzazione (pertinenti e ruolo confermato)
+        if (!ammesso()) { log("CONDIVIDI FLE", { esito: "non consentita", motivo: "dati FLE non pertinenti o ruolo non confermato" }); disegnaTurni(); return; }
+        if (a === "tu_wa" && x.R && x.S) {
+          var t = testoWhatsappTurnoFle({ C: x.C, S: x.S, R: x.R, quando: dataCompleta(new Date(x.R.at)), nd: FVM_ND });
+          log("FLE TURNO WHATSAPP", { comp: x.C.id, turno: x.S.giornataLega, squadre: (x.S.righe || []).length, caratteri: t.length });
+          if (t) condividiTesto(t);
+        }
+        if (a === "comp_wa") {
+          var DFw = datiFle(), tw = testoWhatsappComp(consegneSicure(DFw.mostrato), Number(el.getAttribute("data-c")), inizioGiornataFle(DFw.mostrato && DFw.mostrato.mstr));
+          if (tw) condividiTesto(tw); else avviso("Dato non disponibile: premi AGGIORNA.", true);
+        }
+        if (a === "tu_uno" && x.C.natura === "obbligo") avviaLetturaTurni([{ comp: x.C.id, turno: x.turno || 0, nome: x.C.nome }], false, []);
+        if (a === "tu_tutti") {
+          // UN comando: il turno CORRENTE di ogni competizione con consegna (mai i Ranking, mai i turni precedenti).
+          // RC6: il turno corrente lo ricava la lettura stessa dalla giornata FLE APPENA LETTA (turno 0), non l'ultimo controllo generale;
+          // la selezione dell'utente (anche un turno storico) non cambia: per un turno storico c'è AGGIORNA QUESTO TURNO
+          var arch = archivioTurni(), ora = Date.now(), voci = [], esiti = [];
+          x.sel.forEach(function (c) {
+            if (c.natura !== "obbligo") return;
+            // riuso: lettura di meno di 5 minuti del turno che ERA il corrente al momento della lettura
+            var y = null;
+            Object.keys(arch).forEach(function (k) { var z = arch[k]; if (Number(z.comp) === c.id && z.turno && z.status && Number(z.status.mday) === Number(z.turno.championshipMatchDay) && (!y || (Date.parse(z.at) || 0) > (Date.parse(y.at) || 0))) y = z; });
+            var eta = y ? ora - (Date.parse(y.at) || 0) : Infinity;
+            if (y && eta >= 0 && eta < 5 * 60000) esiti.push({ comp: c.id, nome: c.nome, turno: y.turno.matchDay, esito: "riusato", testo: "lettura di " + Math.max(1, Math.round(eta / 60000)) + " min fa riutilizzata" });
+            else voci.push({ comp: c.id, nome: c.nome, turno: 0 });
+          });
+          if (!voci.length) { scrivi("fle_turni_tutti", { at: new Date().toISOString(), esiti: esiti, fvmId: identitaAttuale() }); disegnaTurni(); return; }
+          avviaLetturaTurni(voci, true, esiti);
+        }
+      });
+    });
+  }
+  // avvio: la lettura si fa nella pagina FLE (stessa sessione e stesse intestazioni del sito), poi si torna qui
+  function avviaLetturaTurni(voci, tutti, esiti) {
+    var t = sLeggi("task");
+    if (t && Date.now() - Number(t.inizio || 0) < 180000) { avviso("Attendi la fine dell'attività in corso.", true); return; }
+    var run = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    sScrivi("turni_err", null);
+    log("FLE TURNI START", { run: run, comando: tutti ? "AGGIORNA TUTTI I TURNI" : "AGGIORNA QUESTO TURNO", daLeggere: voci.map(function (v) { return v.comp + ":" + v.turno; }).join(","), riusati: (esiti || []).filter(function (e) { return e.esito === "riusato"; }).length });
+    sScrivi("task", { tipo: "turno", run: run, inizio: Date.now(), ritorno: location.href, voci: voci, esiti: esiti || [], tutti: !!tutti });
+    location.assign(fleDashboardUrl());
+  }
+  // lettura di UN turno (come Android FLE_TURNO_INJECT): giornata, calendario della competizione, formazioni del turno; solo GET
+  function leggiTurnoFle(comp, turnoChiesto, tipoGioco, soloCorrente) {
+    var out = { comp: Number(comp) || 0, turnoChiesto: Number(turnoChiesto) || 0, errori: [], hdrFrom: ctl.hdrFrom || "", admin: (function () { try { return !!document.querySelector(".admin-icon, nz-icon.anticon-crown"); } catch (e) { return null; } })() };
+    var msg = function (e) { return String(e && e.message || e).slice(0, 140); };
+    var riprova = function (p) { return getApi(p, true).catch(function () { return new Promise(function (ok) { setTimeout(ok, 1500); }).then(function () { return getApi(p, true); }); }); };
+    var stP = ctl.status && Number(ctl.status.mday) > 0 ? Promise.resolve(ctl.status) : riprova("/onboarding/v1/league/status").catch(function (e) { out.errori.push("giornata di Serie A non letta: " + msg(e)); return null; });
+    var calP = riprova("/onboarding/v1/league/competition/calendar/" + out.comp).catch(function (e) { out.calErrore = msg(e); return null; });
+    var roP = tipoGioco ? Promise.resolve(null) : getApi("/onboarding/v1/league/settings/rosters", true).catch(function () { return null; });
+    return Promise.all([stP, calP, roP]).then(function (v) {
+      var s = v[0] && v[0].data && typeof v[0].data === "object" && !Number(v[0].mday) ? v[0].data : v[0];
+      out.status = s ? { mday: Number(s.mday || 0), mstr: String(s.mstr || "") } : null;
+      var ro = v[2] && typeof v[2] === "object" ? (v[2].sroles != null ? v[2] : v[2].data && v[2].data.sroles != null ? v[2].data : null) : null;
+      out.tipoGioco = tipoGioco || (ro ? (Number(ro.sroles) === 2 ? "mantra" : "classic") : "");
+      if (!Array.isArray(v[1])) { out.errori.push("calendario della competizione non letto" + (out.calErrore ? ": " + out.calErrore : " (risposta non valida)")); return out; }
+      var cal = v[1].filter(function (r) { return r && Number(r.matchDay); });
+      out.turni = cal.map(function (r) { return { g: Number(r.matchDay), sa: Number(r.championshipMatchDay) || 0, calc: r.calculated === true }; });
+      var mday = out.status ? out.status.mday : 0;
+      if (!out.turnoChiesto && soloCorrente) {
+        // RC6 (AGGIORNA TUTTI): turno CORRENTE dalla giornata appena letta; nessun turno in questa giornata = nessuna lettura (mai un turno vecchio)
+        if (!mday) { out.errori.push("giornata di Serie A non letta: turno corrente non determinabile"); return out; }
+        if (!cal.some(function (r) { return Number(r.championshipMatchDay) === mday; })) { out.nessunTurno = true; out.nota = "nessun turno di questa competizione nella giornata di Serie A " + mday; return out; }
+      }
+      var t = out.turnoChiesto ? cal.filter(function (r) { return Number(r.matchDay) === out.turnoChiesto; })[0] :
+        (cal.filter(function (r) { return mday && Number(r.championshipMatchDay) === mday; })[0] || cal.filter(function (r) { return mday && Number(r.championshipMatchDay) < mday; }).slice(-1)[0] || cal[0]);
+      if (!t) { out.errori.push(out.turnoChiesto ? "turno " + out.turnoChiesto + " non presente nel calendario" : "calendario senza turni"); return out; }
+      out.turno = { matchDay: Number(t.matchDay), championshipMatchDay: Number(t.championshipMatchDay) || 0, calculated: t.calculated === true,
+        matches: (t.matches || []).map(function (m) { return { tIdH: Number(m && m.tIdH) || 0, tIdA: Number(m && m.tIdA) || 0 }; }) };
+      return riprova("/gaming/v1/teamLineup/" + out.comp + "/" + t.matchDay + "/" + t.championshipMatchDay).then(function (lu) {
+        if (!Array.isArray(lu)) { out.formazioni = null; out.formazioniErrore = "risposta delle formazioni non valida"; return out; }
+        // solo i campi che servono (niente giocatori)
+        out.formazioni = lu.filter(function (l) { return l && Number(l.tid); }).map(function (l) { return { tid: Number(l.tid), ldate: String(l.ldate || ""), visb: l.visb, mdl: String(l.nmdl || l.mdl || ""), act: typeof l.act === "number" ? l.act : null, lucnt: typeof l.lucnt === "number" ? l.lucnt : null }; });
+        return out;
+      }, function (e) { out.formazioni = null; out.formazioniErrore = msg(e); out.http = e && e.http || 0; return out; });
+    }).catch(function (e) { out.errori.push(msg(e)); return out; });
+  }
+  // sulla pagina FLE: una lettura alla volta con 1,5 s di pausa; 30 s per lettura, 170 s in tutto; poi ritorno alla schermata
+  function eseguiTurni(task) {
+    var w = lavoro("Consegne FLE: lettura dei turni…"), chiuso = false, atteso = 0, i = 0, esiti = (task.esiti || []).slice(), voci = task.voci || [], tipo = "";
+    var fine = function () {
+      if (chiuso) return;
+      chiuso = true; clearTimeout(limite);
+      var att = sLeggi("task");
+      if (!att || att.tipo !== "turno" || String(att.run || "") !== String(task.run || "")) { log("FLE TURNI IGNORATO", { run: task.run || "" }); try { w.chiudi(); } catch (e) {} return; }
+      var n = function (e) { return esiti.filter(function (x) { return x.esito === e; }).length; };
+      log("FLE TURNI FINE", { letti: n("letto"), riusati: n("riusato"), errori: n("errore"), durata: Math.round((Date.now() - Number(task.inizio || Date.now())) / 1000) + " s" });
+      if (task.tutti) scrivi("fle_turni_tutti", { at: new Date().toISOString(), esiti: esiti, fvmId: identitaAttuale() });
+      else {
+        var e0 = esiti[0];
+        sScrivi("turni_err", e0 && e0.esito === "errore" ? "Lettura non riuscita: " + e0.testo + ". Resta visibile l'ultima lettura." : null);
+        if (e0 && e0.esito === "letto") sScrivi("turni_sel", { comp: e0.comp, turno: e0.turnoLetto || e0.turno });
+      }
+      sScrivi("task", null);
+      sScrivi("apri", "turni");
+      if (task.ritorno && task.ritorno.indexOf("/" + FLE_SLUG + "/") < 0) location.assign(task.ritorno);
+      else { try { w.chiudi(); } catch (e) {} apriTurni(); }
+    };
+    var limite = setTimeout(function () {
+      voci.slice(i).forEach(function (v) { esiti.push({ comp: v.comp, nome: v.nome, turno: v.turno, esito: "errore", testo: "tempo massimo superato: resta l'ultima lettura" }); });
+      i = voci.length; fine();
+    }, Math.max(5000, 170000 - (Date.now() - Number(task.inizio || Date.now()))));
+    var una = function () {
+      if (chiuso) return;
+      var v = voci[i];
+      if (!v) { fine(); return; }
+      w.stato((voci.length > 1 ? "Aggiorno tutti i turni · " + (i + 1) + "/" + voci.length + " · " : "Leggo ") + v.nome + "…");
+      var scaduta = false, t30 = setTimeout(function () { scaduta = true; esiti.push({ comp: v.comp, nome: v.nome, turno: v.turno, esito: "errore", testo: "tempo scaduto (30 s): resta l'ultima lettura" }); avanti(); }, 30000);
+      var avanti = function () { i++; if (i < voci.length) setTimeout(una, 1500); else fine(); };
+      leggiTurnoFle(v.comp, v.turno, tipo, !v.turno).then(function (res) {
+        if (scaduta || chiuso) return;
+        clearTimeout(t30);
+        res.at = new Date().toISOString(); res.fvmId = identitaAttuale() || ""; res.nomeComp = v.nome; res.run = task.run || "";
+        if (res.tipoGioco) tipo = res.tipoGioco;
+        if (res.turno && res.fvmId) archiviaTurno(res);
+        esiti.push(res.nessunTurno ? { comp: v.comp, nome: v.nome, turno: 0, esito: "nessun_turno", testo: res.nota } : !res.turno ? { comp: v.comp, nome: v.nome, turno: v.turno, esito: "errore", testo: ((res.errori || []).join(" · ") || "dati FLE non letti").slice(0, 120) }
+          : res.formazioniErrore ? { comp: v.comp, nome: v.nome, turno: res.turno.matchDay, esito: "errore", testo: "formazioni del turno non lette: " + String(res.formazioniErrore).slice(0, 100) }
+          : { comp: v.comp, nome: v.nome, turno: res.turno.matchDay, turnoLetto: res.turno.matchDay, esito: "letto", testo: res.turno.matchDay + "° turno · Serie A " + (res.turno.championshipMatchDay || "?") });
+        log("FLE TURNO RESULT", { comp: res.comp, turno: res.turno ? res.turno.matchDay : 0, serieA: res.turno ? res.turno.championshipMatchDay : 0, formazioni: Array.isArray(res.formazioni) ? res.formazioni.length : "non lette", errori: (res.errori || []).length, http: res.http || 0 });
+        avanti();
+      });
+    };
+    var tick = setInterval(function () {
+      atteso += 500;
+      if ((ctl.hdr && ctl.hdrScore >= 2) || (ctl.hdr && atteso >= 6000)) { clearInterval(tick); una(); }
+      else if (atteso >= 20000) {
+        clearInterval(tick);
+        voci.forEach(function (v) { esiti.push({ comp: v.comp, nome: v.nome, turno: v.turno, esito: "errore", testo: "pagina FLE non letta (accesso a Leghe Fantacalcio non attivo?)" }); });
+        i = voci.length; fine();
+      }
+    }, 500);
+  }
+  // la vista per competizione non deve MAI impedire l'Area Admin o il riepilogo: un errore = vista assente (con diagnosi)
+  function consegneSicure(r) {
+    try { return consegnePerCompetizione(r); } catch (e) { log("CONSEGNE PER COMPETIZIONE", { esito: "errore", motivo: String(e && e.message || e).slice(0, 80) }); return null; }
+  }
+  // consegne della squadra nelle competizioni del turno, se non tutte complete (es. "consegnata in 1 di 2 competizioni")
+  function testoParziale(CC, tid) {
+    var x = CC && CC.squadre[Number(tid)];
+    if (!x || x.tenuta < 2 || x.consegnata.length === x.tenuta) return "";
+    return "consegnata in " + x.consegnata.length + " di " + x.tenuta + " competizioni";
   }
   // conteggio di una lega: consegnate / squadre lette (+ non verificate)
   function contaLegaFle(L) {
-    var nv = L.squadre.filter(function (x) { return x.info.gioca && !x.info.lu && x.info.nonLetta; }).length;
-    return { nv: nv, lette: L.squadre.filter(function (x) { return x.info.gioca; }).length - nv, fatte: L.squadre.filter(function (x) { return x.info.lu; }).length };
+    var nv = L.squadre.filter(function (x) { return x.info.gioca && !x.info.lu && !fleRecuperata(x) && x.info.nonLetta; }).length;
+    return { nv: nv, lette: L.squadre.filter(function (x) { return x.info.gioca; }).length - nv, fatte: L.squadre.filter(function (x) { return x.info.lu; }).length,
+      rec: L.squadre.filter(fleRecuperata).length };
   }
   function testoIncompleto(R) { return "⚠️ CONTROLLO INCOMPLETO" + (R.nonVerificate ? " · " + R.nonVerificate + " squadre non verificate (competizioni non lette)" : " · dati FLE non letti per intero") + ". Il conteggio vale solo per le competizioni lette."; }
   // S4: inizio della giornata FLE letto da league/status (mstr, ora UTC come nell'app Android); null se non letto
@@ -5703,23 +8376,80 @@
   // S4: report come l'app Android 1.2.3 (verde/rosso per squadra) con ora di consegna, inizio giornata e momento
   // del controllo. Solo cio che FLE riporta: rosso = nessuna formazione presente su FLE AL MOMENTO DEL CONTROLLO.
   // Controllo incompleto: dichiarato in testa; le squadre delle competizioni non lette sono ⚪ "non verificate", mai 🔴.
-  function testoWhatsapp(R) {
+  function testoWhatsapp(R, CC) {
     var at = R.at ? new Date(R.at) : null, prima = R.inizio && at && at.getTime() < R.inizio.getTime();
-    var righe = ["📊 FLE · " + (R.mday ? R.mday + "ª giornata" : "giornata non letta") + (R.inizio ? " · inizio " + dataBreve(R.inizio) : "")];
+    var righe = ["📊 FLE · " + (R.mday ? R.mday + "ª giornata di Serie A — giornata generale FLE" : "giornata non letta") + (R.inizio ? " · inizio " + dataBreve(R.inizio) : "")];
     if (!R.completo) righe.push(testoIncompleto(R));
-    righe.push("Consegnate: " + R.consegnate + "/" + R.lette + (R.nonVerificate ? " (+" + R.nonVerificate + " non verificate)" : ""), "Ultimo controllo: " + (at ? dataCompleta(at) : "non disponibile"), "");
+    righe.push("Consegnate: " + R.consegnate + "/" + R.lette + (R.recuperate ? " · Recuperate dal server: " + R.recuperate : "") + (R.nonVerificate ? " (+" + R.nonVerificate + " non verificate)" : ""), "Ultimo controllo: " + (at ? dataCompleta(at) : "non disponibile"), "");
+    // 1.3.5 (collaudo XR): significato del numero generale e consegne per competizione (stessi dati dell'Area Admin)
+    if (CC && CC.comps.length) {
+      righe.splice(righe.length - 1, 0, "(squadre con almeno una formazione rilevata, non per forza in tutte le competizioni)");
+      righe.push("📋 Per competizione");
+      CC.comps.forEach(function (C) {
+        righe.push("• " + C.nome + (C.turno ? " (turno " + C.turno + ")" : "") + ": " + (C.tenute ? C.conta.consegnata + "/" + C.tenute : "—") +
+          (C.conta.mancante ? " · mancano " + C.conta.mancante : "") + (C.conta.recuperata ? " · recuperate dal server " + C.conta.recuperata : "") +
+          (C.conta.da_verificare ? " · da verificare " + C.conta.da_verificare : "") + (C.nota && !C.tenute ? " · " + C.nota : ""));
+        C.righe.filter(function (x) { return x.stato === "mancante"; }).forEach(function (x) { righe.push("   🔴 " + x.squadra + (x.lega ? " (" + x.lega + ")" : "")); });
+        C.righe.filter(function (x) { return x.stato === "recuperata"; }).forEach(function (x) { righe.push("   🔴 " + x.squadra + (x.lega ? " (" + x.lega + ")" : "") + " · recuperata dal server"); });
+      });
+      if (CC.parziali.length) {
+        righe.push("⚠️ Consegne parziali: " + CC.parziali.length);
+        CC.parziali.forEach(function (x) { righe.push("   " + x.squadra + ": ✓ " + x.consegnata.join(", ") + (x.mancante.length ? " · ✗ " + x.mancante.join(", ") : "") +
+          (x.recuperata.length ? " · 🔴 recuperata dal server: " + x.recuperata.join(", ") : "") + (x.da_verificare.length ? " · ? " + x.da_verificare.join(", ") : "")); });
+      }
+      righe.push("");
+    }
     R.lista.forEach(function (L) {
       var gioc = L.squadre.filter(function (x) { return x.info.gioca; });
       if (!gioc.length) return;
       var n = contaLegaFle(L);
-      righe.push("🏆 " + L.lega + " · " + n.fatte + "/" + n.lette + (n.nv ? " (+" + n.nv + " non verificate)" : ""));
-      gioc.forEach(function (x) { righe.push((x.info.lu ? "🟢 " : x.info.nonLetta ? "⚪ " : "🔴 ") + x.squadra + (x.info.lu && oraConsegna(x.info.lu) ? " · " + oraConsegna(x.info.lu) : "") + (!x.info.lu && x.info.nonLetta ? " · non verificata" : "")); });
+      righe.push("🏆 " + L.lega + " · " + n.fatte + "/" + n.lette + (n.rec ? " · recuperate dal server " + n.rec : "") + (n.nv ? " (+" + n.nv + " non verificate)" : ""));
+      gioc.forEach(function (x) {
+        // A1: recuperata dal server = rossa, mai tra le consegnate
+        if (fleRecuperata(x)) { righe.push("🔴 " + x.squadra + " · recuperata dal server" + (oraConsegna(x.info.rec) ? " " + oraConsegna(x.info.rec) : "")); return; }
+        righe.push((x.info.lu ? "🟢 " : x.info.nonLetta ? "⚪ " : "🔴 ") + x.squadra + (x.info.lu && oraConsegna(x.info.lu) ? " · " + oraConsegna(x.info.lu) : "") + (!x.info.lu && x.info.nonLetta ? " · non verificata" : ""));
+      });
       righe.push("");
     });
     if (R.errori.length) { righe.push("⚠️ Non lette: " + R.errori.join(" · ")); righe.push(""); }
-    righe.push("🟢 = formazione presente su FLE (ora di consegna) · 🔴 = nessuna formazione su FLE al momento del controllo" + (prima ? " (giornata non ancora iniziata)" : "") + (R.nonVerificate ? " · ⚪ = competizione non letta: stato non verificato" : ""));
+    if ((R.classifiche || []).length) { righe.push("ℹ️ " + testoClassifiche(R.classifiche)); righe.push(""); }
+    righe.push("🟢 = formazione presente su FLE (ora di consegna) · 🔴 = nessuna formazione su FLE al momento del controllo" + (prima ? " (giornata non ancora iniziata)" : "") +
+      (R.recuperate ? " · 🔴 recuperata dal server = formazione non consegnata dal partecipante" : "") + (R.nonVerificate ? " · ⚪ = competizione non letta: stato non verificato" : ""));
     righe.push("Fonte: FantaLegaEuropa-FLE su Leghe Fantacalcio");
     return righe.join("\n");
+  }
+  // 1.3.5 (2° collaudo XR): riepilogo WhatsApp di UNA competizione (pulsante alla fine del suo elenco nell'Area Admin).
+  // Solo i dati del controllo: stati CONSEGNATA / MANCANTE / DA VERIFICARE / NON IN GIOCO separati, ora di salvataggio e
+  // stati ufficiali solo se FLE li ha restituiti (nessun modulo, orario o salvataggio inventato). Ranking mai qui.
+  function testoWhatsappComp(CC, id, inizio) {
+    var C = CC && CC.comps.filter(function (x) { return Number(x.id) === Number(id); })[0];
+    if (!C) return "";
+    var at = CC.at ? new Date(CC.at) : null, prima = inizio && at && at.getTime() < inizio.getTime();
+    var righe = ["📋 CONSEGNE FLE · " + C.nome,
+      (C.turno ? C.turno + "° turno FLE" + (C.calcolato ? " (calcolato)" : "") + " · " : "") + (CC.mday ? CC.mday + "ª giornata di Serie A — giornata generale FLE" : "giornata non letta") + (inizio ? " · inizio " + dataBreve(inizio) : ""),
+      "Controllo: " + (at ? dataCompleta(at) : "non disponibile") + " · fonte: FantaLegaEuropa-FLE"];
+    if (C.nota) righe.push("⚠️ " + C.nota);
+    if (C.partite) righe.push("ℹ️ Letta partita per partita (account senza privilegi admin FLE): solo i dati visibili a questo account.");
+    if (!CC.ufficiali) righe.push("⚠️ Controllo di una versione precedente: stati ufficiali e partite del turno non disponibili.");
+    if (CC.adminPagina === false) righe.push("⚠️ Pagina FLE letta senza l'icona admin: prima della scadenza le formazioni delle altre squadre potrebbero non essere visibili.");
+    righe.push("", (C.iscritte != null ? "Iscritte: " + C.iscritte + " · " : "") + "In gioco: " + C.tenute + " · Consegnate: " + C.conta.consegnata + " · Mancanti: " + C.conta.mancante + (C.conta.in_attesa ? " · In attesa: " + C.conta.in_attesa : "") +
+      (C.conta.recuperata ? " · Recuperate dal server: " + C.conta.recuperata : "") + (C.conta.da_verificare ? " · Da verificare: " + C.conta.da_verificare : "") + (C.conta.non_in_gioco ? " · Non in gioco: " + C.conta.non_in_gioco : ""), "");
+    [["consegnata", "🟢 CONSEGNATE"], ["mancante", "🔴 MANCANTI"], ["in_attesa", "⏳ IN ATTESA (prima dell'inizio: non è una mancata consegna)"], ["recuperata", "🔴 RECUPERATE DAL SERVER"], ["da_verificare", "⚪ DA VERIFICARE"], ["non_in_gioco", "▫️ NON IN GIOCO"]].forEach(function (g) {
+      var el = C.righe.filter(function (x) { return x.stato === g[0]; });
+      if (!el.length) return;
+      righe.push(g[1] + " (" + el.length + ")");
+      el.forEach(function (x) { righe.push("• " + x.squadra + (x.lega ? " (" + x.lega + ")" : "") + (x.det ? " · " + x.det : "")); });
+      righe.push("");
+    });
+    righe.push("🟢 = formazione presente su FLE · 🔴 = in campo nel turno, nessuna formazione su FLE al momento del controllo" + (C.conta.in_attesa ? " · ⏳ in attesa = nessuna formazione prima dell'inizio della giornata, non è una mancata consegna" : "") +
+      (C.conta.recuperata ? " · 🔴 recuperata dal server = formazione non consegnata dal partecipante" : "") + " · ⚪ = non verificabile con certezza · NON IN GIOCO = senza partita nel turno, non è una mancata consegna.");
+    return righe.join("\n");
+  }
+  // 1.3.5: competizioni escluse dalle consegne (classifiche a punti e competizioni di natura da verificare)
+  function testoClassifiche(lista) {
+    var rk = (lista || []).filter(function (c) { return c.natura === "ranking"; }), dv = (lista || []).filter(function (c) { return c.natura !== "ranking"; });
+    return (rk.length ? rk.map(function (c) { return c.nome; }).join(", ") + ": classifiche a punti, nessuna formazione da consegnare." : "") +
+      (dv.length ? (rk.length ? " " : "") + dv.map(function (c) { return c.nome; }).join(", ") + ": natura da verificare, nessun obbligo di consegna considerato." : "");
   }
   // condivisione: foglio di condivisione di iOS (WhatsApp); se non disponibile, testo copiato
   function condividiTesto(t) {
@@ -5727,17 +8457,25 @@
     try { navigator.clipboard.writeText(t).then(function () { avviso("Riepilogo copiato: incollalo su WhatsApp."); }, function () { avviso("Condivisione non disponibile.", true); }); }
     catch (e) { avviso("Condivisione non disponibile.", true); }
   }
-  // S4: controllo FLE automatico SOLO all'ingresso scelto dall'utente (AREA ADMIN, sblocco): mai al rientro dalla
-  // pagina FLE, mai in ciclo, mai se l'ultimo controllo ha meno di 2 minuti (AGGIORNA resta sempre possibile)
-  var ADMIN_AUTO_MS = 2 * 60000;
-  function controlloAutoAmmesso() {
-    var at = datiFle().ultimo; // anche un tentativo non valido recente evita un nuovo controllo automatico
-    return adminSbloccato() && !taskAttivoFle() && !(at && Date.now() - at < ADMIN_AUTO_MS);
+  // PROVA14 (sicurezza): NESSUN controllo FLE automatico (prima partiva entrando nell'Area Admin o allo sblocco, in qualsiasi
+  // contesto, anche con una lega Fantaclub fuori dal circuito FLE). Il controllo FLE di tutte le squadre parte SOLO con
+  // CONTROLLA / AGGIORNA premuto dall'utente, e mai con Fantaclub scelto su una lega fuori circuito o non riconosciuta.
+  function controlloFleAdminAmmesso() {
+    // 1.3.5-RC: nessuna funzione FLE riservata senza l'account di Leghe Fantacalcio riconosciuto in questa scheda (FLE sta su Leghe)
+    if (!identitaAttuale()) return { ok: false, motivo: "identita", testo: testoIdentita() };
+    if (piattaformaScelta() !== "fantaclub") return { ok: true };
+    var lf = legaFc();
+    if (lf && inCircuitoFc(lf.nl)) return { ok: true };
+    return { ok: false, testo: lf ? "La lega Fantaclub in uso (" + lf.nome + ") non è nel circuito FLE: nessun controllo FLE. Le CONSEGNE UFFICIALI Fantaclub restano consultabili."
+      : "Nessuna lega Fantaclub del circuito FLE riconosciuta: nessun controllo FLE. Le CONSEGNE UFFICIALI Fantaclub restano consultabili." };
   }
   // AGGIORNA: identificativo per ogni controllo (i risultati di controlli precedenti o arrivati dopo il tempo massimo
   // vengono ignorati); doppia pressione ignorata; tempo massimo 70 s; letture sempre dal server.
   var FLE_MAX_MS = 70000;
   function avviaControlloConsegne(perche) {
+    if (!adminSbloccato()) { log("CONTROLLO CONSEGNE", { avvio: perche, esito: "non avviato", motivo: "Area Admin non sbloccata in questo contesto" }); return; }
+    var am = controlloFleAdminAmmesso();
+    if (!am.ok) { log("CONTROLLO CONSEGNE", { avvio: perche, esito: "non avviato", motivo: am.testo }); avviso(am.testo, true); return; }
     var t = sLeggi("task");
     if (t && t.tipo === "admin" && Date.now() - Number(t.inizio || 0) < FLE_MAX_MS) { log("FLE CHECK", "controllo gia in corso: non ripetuto"); return; }
     var run = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -5746,15 +8484,15 @@
     location.assign(fleDashboardUrl());
   }
   function apriAdmin(ingresso) {
+    try { verificaIdentita("Area Admin"); } catch (e) {} // 1.3.5-RC: se manca, lettura dell'account (sola lettura, una per pagina)
     monta();
     chiudiPannello();
     pannelloPrincipale = false;
     pannello = document.createElement("div");
     pannello.className = "ov";
     radice.appendChild(pannello);
-    var auto = !!ingresso && controlloAutoAmmesso();
-    disegnaAdmin(null, auto);
-    if (auto) setTimeout(function () { if (pannello) avviaControlloConsegne("ingresso in Area Admin"); }, 600);
+    if (ingresso) log("ADMIN", { ingresso: "Home", sbloccato: adminSbloccato(), controlloAutomatico: "no (PROVA14)" });
+    disegnaAdmin(null, false);
   }
   function disegnaAdmin(errore, avvio) {
     if (!pannello) return;
@@ -5764,37 +8502,58 @@
         (errore ? "<div style='color:#f87171;margin-top:8px'>" + esc(errore) + "</div>" : "") +
         "<button class='bt oro' data-a='sblocca'>SBLOCCA</button><div class='mu' style='margin-top:8px'>Il codice non va condiviso con i partecipanti. Apre le funzioni di FVM: i permessi sui siti restano quelli del tuo account.</div></div>";
     } else {
-      var DF = datiFle(), R = riepilogoFle(DF.mostrato), ora = Date.now();
+      // PROVA15 (sicurezza): dati e comandi FLE SOLO se pertinenti (Leghe Fantacalcio, o Fantaclub con lega del circuito) e SOLO con il
+      // ruolo di amministratore FLE CONFERMATO dal sito per questo accesso (lettura riservata agli amministratori accettata nell'ultimo
+      // controllo dello stesso contesto). Ruolo non verificabile = nessun riepilogo amministrativo. Il codice FVM NON da questo ruolo.
+      var am = controlloFleAdminAmmesso(), DF0 = am.ok ? datiFle() : null, ruolo = DF0 && DF0.mostrato ? ruoloFleDi(DF0.mostrato) : "";
+      var DF = DF0 || { mostrato: null }, R = am.ok && ruolo === "amministratore" ? riepilogoFle(DF.mostrato) : null, ora = Date.now(), CC = R ? consegneSicure(DF.mostrato) : null;
+      if (!am.ok) h += "<div class='cd'><div class='lb'>FUNZIONI FLE NON DISPONIBILI</div><div class='mu' style='margin-top:6px'>" + esc(am.testo) + "</div></div>";
+      if (am.ok) {
       h += "<div class='lb' style='margin:4px 0 6px'>CONTROLLO FLE (TUTTE LE SQUADRE)</div>";
+      h += "<div class='mu' style='margin:0 2px 8px'>" + esc(testoRuoloFle(ruolo, DF0)) + "</div>";
       if (avvio) h += "<div class='cd' style='border-color:#e2b33c'><div style='font-weight:800'>Avvio del controllo FLE…</div><div class='mu'>Apro FantaLegaEuropa-FLE e leggo le formazioni consegnate di tutte le competizioni.</div></div>";
       if (errore) h += "<div class='cd' style='border-color:#e2333b;margin-top:10px'><div style='color:#f87171'>" + esc(errore) + "</div></div>";
       if (R) {
         var at = R.at ? new Date(R.at) : null, prima = R.inizio && ora < R.inizio.getTime(), manca = mancaAllInizio(R.inizio, ora);
         if (DF.recente) h += "<div class='cd' style='border-color:#fbbf24;margin-top:4px'><div style='color:#fbbf24;font-size:13px'>⚠️ Ultimo tentativo " + esc(dataCompleta(new Date(DF.recente.at))) + " non valido: " + esc((DF.recente.errors || []).length ? DF.recente.errors.join(" · ") : "dati FLE incompleti") + ".<br>Sotto: l'ultimo controllo valido.</div></div>";
-        h += "<div class='cd' style='margin-top:4px'><div class='lb'>" + (R.mday ? esc(R.mday) + "ª GIORNATA FLE" : "GIORNATA FLE NON LETTA") + "</div>" +
+        h += "<div class='cd' style='margin-top:4px'><div class='lb'>" + (R.mday ? esc(R.mday) + "ª GIORNATA DI SERIE A — GIORNATA GENERALE FLE" : "GIORNATA FLE NON LETTA") + "</div>" +
           (!R.completo ? "<div style='color:#fbbf24;margin-top:6px;font-size:13px;font-weight:800'>" + esc(testoIncompleto(R)) + "</div>" : "") +
           (R.inizio ? "<div class='mu'>Inizio: " + esc(dataBreve(R.inizio)) + (manca ? " · mancano " + esc(manca) : prima ? "" : " · iniziata") + "</div>" : "<div class='mu'>Inizio della giornata: DATO NON DISPONIBILE</div>") +
           "<div style='font-size:20px;font-weight:900;margin-top:6px'>" + R.consegnate + "/" + R.lette + " consegnate" + (R.nonVerificate ? "<span class='mu' style='font-size:14px'> (+" + R.nonVerificate + " non verificate)</span>" : "") + "</div>" +
+          // A1: formazioni recuperate dal server = non consegnate dal partecipante (rosse, fuori dalle consegnate)
+          (R.recuperate ? "<div style='color:#f87171;font-size:14px;font-weight:800'>🔴 " + R.recuperate + " recuperate dal server (non consegnate dal partecipante)</div>" : "") +
+          // 1.3.5 (collaudo XR): significato del numero generale; il dettaglio e in CONSEGNE FLE PER COMPETIZIONE
+          "<div class='mu' style='font-size:12px'>Squadre con almeno una formazione rilevata: non significa che tutte le loro competizioni siano complete (vedi CONSEGNE FLE PER COMPETIZIONE).</div>" +
+          (CC && CC.parziali.length ? "<div style='color:#fbbf24;margin-top:4px;font-size:13px;font-weight:800'>⚠️ " + CC.parziali.length + " squadre con consegne parziali</div>" : "") +
           "<div class='mu'>Ultimo controllo: " + esc(at ? dataCompleta(at) : "non disponibile") + "</div>" +
-          (R.errori.length ? "<div style='color:#fbbf24;margin-top:6px;font-size:13px'>" + esc(R.errori.join(" · ")) + "</div>" : "") + "</div>";
+          (R.errori.length ? "<div style='color:#fbbf24;margin-top:6px;font-size:13px'>" + esc(R.errori.join(" · ")) + "</div>" : "") +
+          ((R.classifiche || []).length ? "<div class='mu' style='margin-top:6px'>ℹ️ " + esc(testoClassifiche(R.classifiche)) + "</div>" : "") + "</div>";
         h += "<div style='display:flex;gap:8px'><button class='bt oro' style='flex:1' data-a='controlla'>AGGIORNA</button><button class='bt' style='flex:1;border-color:#22c55e;color:#4ade80' data-a='whatsapp'>CONDIVIDI SU WHATSAPP</button></div>";
+        h += cartaTabella(controlloTabella(DF.mostrato)); // 1.3.5: iscritte su FLE (non e la consegna)
+        h += cartaCompetizioni(CC, { compatto: true }); // RC3 (come Android): riepilogo compatto, dettaglio nella schermata per competizione e turno
         R.lista.forEach(function (L) {
           var n = contaLegaFle(L), gioca = n.lette + n.nv;
-          h += "<div class='cd'><div class='lb'>" + esc(L.lega) + (gioca ? " · " + n.fatte + "/" + n.lette + (n.nv ? " (+" + n.nv + " non verificate)" : "") : "") + "</div>";
+          h += "<div class='cd'><div class='lb'>" + esc(L.lega) + (gioca ? " · " + n.fatte + "/" + n.lette + (n.rec ? " · recuperate " + n.rec : "") + (n.nv ? " (+" + n.nv + " non verificate)" : "") : "") + "</div>";
           L.squadre.forEach(function (x) {
-            var nonVer = !x.info.lu && x.info.gioca && x.info.nonLetta;
+            var rec = fleRecuperata(x); // A1: rossa, "Recuperata dal Server", mai consegnata
+            var nonVer = !x.info.lu && !rec && x.info.gioca && x.info.nonLetta;
             var col = x.info.lu ? "#4ade80" : nonVer ? "#aab3c2" : x.info.gioca ? "#f87171" : "#7d8799";
-            var det = x.info.lu ? oraConsegna(x.info.lu) + (x.info.lu.visb === false || x.info.lu.visb === 0 ? " · invisibile" : "")
-              : nonVer ? "non verificata (competizione non letta)" : x.info.gioca ? (prima ? "in attesa" : "non schierata (al controllo)") : "non gioca questa giornata";
-            h += "<div style='display:flex;justify-content:space-between;gap:8px;margin-top:6px;font-size:14px'><span style='color:" + col + ";font-weight:700'>" + (nonVer ? "⚪ " : "") + esc(x.squadra) + "</span><span class='mu'>" + esc(det) + "</span></div>";
+            var det = rec ? "Recuperata dal Server" + (oraConsegna(x.info.rec) ? " · " + oraConsegna(x.info.rec) : "")
+              : x.info.lu ? oraConsegna(x.info.lu) + (x.info.lu.visb === false || x.info.lu.visb === 0 ? " · invisibile" : "")
+              : nonVer ? "non verificata (" + (x.info.motivoNV ? x.info.motivoNV : x.info.incerta ? "calendario incerto o senza avversario" : "competizione non letta") + ")" : x.info.gioca ? (prima ? "in attesa" : "non schierata (al controllo)") : "non gioca questa giornata";
+            var pz = x.info.lu ? testoParziale(CC, x.info.lu.tid) : ""; // 1.3.5: consegna parziale tra le competizioni
+            if (pz) { det += " · " + pz; col = "#fbbf24"; }
+            h += "<div style='display:flex;justify-content:space-between;gap:8px;margin-top:6px;font-size:14px'><span style='color:" + col + ";font-weight:700'>" + (nonVer ? "⚪ " : "") + (rec ? "🔴 " : "") + esc(x.squadra) + "</span><span class='mu'" + (rec ? " style='color:#f87171'" : "") + ">" + esc(det) + "</span></div>";
           });
           h += "</div>";
         });
         h += "<div class='mu' style='font-size:11px;margin:4px 2px 8px'>Fonte: FantaLegaEuropa-FLE (league/status, competizioni, calendario, formazioni). Nessun calcolo di jolly o penalità.</div>";
-      } else if (!avvio) h += "<button class='bt oro' data-a='controlla'>CONTROLLA SU FLE (TUTTE LE SQUADRE)</button>";
-      // 1.1.0 Fantaclub fase 2: prova del passaggio tra domini con dati fittizi (solo admin)
+        h += "<button class='bt' data-a='turni'>CONSEGNE FLE PER COMPETIZIONE E TURNO</button>";
+      } else if (!avvio) h += "<button class='bt oro' data-a='controlla'>CONTROLLA SU FLE (TUTTE LE SQUADRE)</button><div class='mu' style='font-size:12px;margin:4px 2px'>Sola lettura: il controllo verifica anche se il sito riconosce questo account come amministratore FLE. Senza quella conferma il riepilogo non viene mostrato.</div>";
+      } // PROVA15: fine della parte FLE (solo se pertinente)
+      // PROVA14: tolto il pulsante di prova PROVA PASSAGGIO FANTACLUB (1.1.0, dati fittizi): il passaggio vero resta per il controllo Fantaclub
       h += "<button class='bt' data-a='ufficiale'>CONSEGNE UFFICIALI DELLE LEGHE</button>";
-      h += "<button class='bt' data-a='prova_fantaclub'>PROVA PASSAGGIO FANTACLUB</button>";
+      h += "<div class='mu' style='font-size:12px;margin:6px 2px'>Area Admin sbloccata solo in questa scheda, per questa piattaforma e questa lega (al massimo 60 minuti). I permessi sui siti restano quelli dell'account collegato.</div>";
       h += "<button class='bt' style='color:#aab3c2' data-a='esci'>ESCI DA ADMIN</button>";
     }
     pannello.innerHTML = h;
@@ -5806,29 +8565,100 @@
           var v = String((pannello.querySelector("#fvm-codice") || {}).value || "").trim().toUpperCase();
           sha256Hex(v).then(function (hx) {
             if (hx === CODICE_ADMIN_SHA256) {
-              scrivi("admin", true); log("ADMIN", "sbloccato");
-              var auto = controlloAutoAmmesso();
-              disegnaAdmin(null, auto);
-              if (auto) setTimeout(function () { if (pannello) avviaControlloConsegne("sblocco Area Admin"); }, 600);
+              sScrivi("admin_sessione", { at: Date.now(), contesto: contestoAdmin() });
+              log("ADMIN", { esito: "sbloccato", piattaforma: piattaformaScelta(), epoca: epocaAccount(), controlloAutomatico: "no (PROVA14)" });
+              disegnaAdmin(null, false);
             } else disegnaAdmin("Codice non valido.");
           }).catch(function () { disegnaAdmin("Verifica del codice non riuscita."); });
         }
-        if (a === "esci") { scrivi("admin", false); log("ADMIN", "uscito"); disegnaAdmin(); }
-        if (a === "prova_fantaclub") {
-          // andata verso Fantaclub con dati fittizi; il ritorno arriva con TORNA A FVM dalla barra su Fantaclub
-          var at = Date.now();
-          var id = inviaPassaggio("fantaclub", "prova", { prova: "dati fittizi", numero: 42, testo: "Fanta Vice Mister" }, "/");
-          if (id) { sScrivi("passaggio_prova", { id: id, at: at }); log("PASSAGGIO", { tipo: "prova", esito: "inviato" }); }
-          else log("PASSAGGIO", { tipo: "prova", esito: "non inviato" });
-        }
+        if (a === "esci") { sScrivi("admin_sessione", null); log("ADMIN", "uscito"); disegnaAdmin(); }
         if (a === "controlla") avviaControlloConsegne("AGGIORNA");
+        if (a === "comp_det") {
+          var cd = pannello && pannello.querySelector("#fvm-comp-" + Number(el.getAttribute("data-c")));
+          if (cd) { cd.classList.toggle("aperta"); el.textContent = cd.classList.contains("aperta") ? "NASCONDI SQUADRE ▴" : "MOSTRA SQUADRE ▾"; }
+        }
+        // PROVA15: condivisione dei dati FLE solo nelle stesse condizioni della loro visualizzazione (pertinenti e ruolo confermato)
+        if ((a === "comp_wa" || a === "whatsapp") && !(controlloFleAdminAmmesso().ok && ruoloFleDi(datiFle().mostrato) === "amministratore")) { log("CONDIVIDI FLE", { esito: "non consentita", motivo: "dati FLE non pertinenti o ruolo non confermato" }); return; }
+        if (a === "comp_wa") {
+          var DFw = datiFle(), tw = testoWhatsappComp(consegneSicure(DFw.mostrato), Number(el.getAttribute("data-c")), inizioGiornataFle(DFw.mostrato && DFw.mostrato.mstr));
+          log("CONDIVIDI COMPETIZIONE", { comp: Number(el.getAttribute("data-c")), esito: tw ? "foglio di condivisione" : "dato non disponibile" });
+          if (tw) condividiTesto(tw); else avviso("Dato non disponibile: premi AGGIORNA.", true);
+        }
+        if (a === "turni") { apriTurni(); return; } // RC3
+        if (a === "tab_dettagli") {
+          var td = pannello && pannello.querySelector("#fvm-tabdet");
+          if (td) { td.classList.toggle("aperta"); el.textContent = td.classList.contains("aperta") ? "NASCONDI DETTAGLI ▴" : "MOSTRA DETTAGLI ▾"; }
+        }
         if (a === "ufficiale") apriUfficiale();
         if (a === "whatsapp") {
           var R2 = riepilogoFle(datiFle().mostrato);
-          if (R2) condividiTesto(testoWhatsapp(R2));
+          if (R2) condividiTesto(testoWhatsapp(R2, consegneSicure(datiFle().mostrato)));
         }
       });
     });
+  }
+  // ================================================================ PROVA5: lettura PER PARTITA (partecipanti non amministratori FLE)
+  // La lettura cumulativa teamLineup/<comp>/<turno>/<giornata> e quella che il sito riserva agli amministratori della lega
+  // ("teamLineup ADMIN" nel codice del sito): per un partecipante normale il server risponde HTTP 400. Per i partecipanti il
+  // sito legge UNA partita alla volta (teamLineup/<comp>/<turno>/<giornata>/<casa>/<ospite>, 4 alla volta): FVM fa lo stesso,
+  // con la sessione e le intestazioni del sito, SOLO quando la lettura cumulativa e rifiutata. Nessun giocatore salvato.
+  // Regola del sito: formazione presente se c'e la data di consegna OPPURE ci sono i giocatori (invisibile = consegnata).
+  // costanti: 4 partite alla volta, 250 ms di pausa tra un gruppo e l'altro, 2 minuti di margine sull'inizio della giornata
+  // stessa richiesta di getApi(path, true); in caso di errore anche il breve messaggio del server (mai intestazioni o cookie)
+  function apiFleLettura(path) {
+    return fetchOriginale(API + path, { headers: senzaConvalida(ctl.hdr), credentials: "include", cache: "no-store" }).then(function (r) {
+      if (r.ok) return r.json();
+      return (typeof r.text === "function" ? r.text() : Promise.resolve("")).catch(function () { return ""; }).then(function (t) { var e = new Error("HTTP " + r.status + " " + path); e.http = r.status; e.msg = messaggioServerFle(t); throw e; });
+    });
+  }
+  function messaggioServerFle(t) {
+    var s = String(t || ""), m = "";
+    try {
+      var j = JSON.parse(s), x = j && (j.error_msgs || j.errors || j.error || j.message || j.descrizione || j.msg);
+      m = typeof x === "string" ? x : Array.isArray(x) ? x.map(function (e) { return typeof e === "string" ? e : e && (e.descrizione || e.message || e.msg || e.code) || ""; }).join(" · ")
+        : x && typeof x === "object" ? String(x.descrizione || x.message || x.msg || "") : "";
+    } catch (e) { m = s.replace(/<[^>]*>/g, " "); }
+    // nessun codice lungo (token, chiavi): solo il testo breve
+    return String(m || "").replace(/[A-Za-z0-9_\-.]{24,}/g, "…").replace(/\s+/g, " ").trim().slice(0, 100);
+  }
+  function fleDataValida(v) { var s = String(v == null ? "" : v).trim(); return !!s && !/^0+$/.test(s); }
+  // una squadra della risposta della partita -> riga nello STESSO formato della lettura cumulativa (null = nessuna formazione)
+  function rigaPartitaFle(p) {
+    if (!p || typeof p !== "object") return null;
+    var gioc = (Array.isArray(p.starts) && p.starts.length > 0) || (Array.isArray(p.bench) && p.bench.length > 0);
+    if (!fleDataValida(p.ldate) && !gioc) return null;
+    return { tid: Number(p.tid) || 0, ldate: fleDataValida(p.ldate) ? String(p.ldate) : "", visb: p.visb, act: typeof p.act === "number" ? p.act : null, lucnt: typeof p.lucnt === "number" ? p.lucnt : null };
+  }
+  // tutte le partite del turno, PARTITE_INSIEME alla volta con una pausa; al primo 429 o errore del server il controllo
+  // intero smette di leggere (condiviso.fermata): le partite rimaste diventano "non lette" (DA VERIFICARE)
+  function letturaPartiteFle(c, turno, mday, attivo, condiviso) {
+    var PARTITE_INSIEME = 4, PARTITE_PAUSA_MS = 250;
+    var coppie = (turno.matches || []).filter(function (m) { return m && Number(m.tIdH) > 0 && Number(m.tIdA) > 0; });
+    var R = { lineups: [], nonLette: [], letture: 0, fallite: 0, fermata: condiviso.fermata || "", messaggio: "" }, i = 0;
+    function gruppo() {
+      if (i >= coppie.length) return Promise.resolve(R);
+      if (!attivo() || condiviso.fermata) { R.fermata = condiviso.fermata || R.fermata; coppie.slice(i).forEach(function (m) { R.nonLette.push(Number(m.tIdH), Number(m.tIdA)); }); i = coppie.length; return Promise.resolve(R); }
+      var g = coppie.slice(i, i + PARTITE_INSIEME); i += g.length;
+      return Promise.all(g.map(function (m) {
+        var h = Number(m.tIdH), a = Number(m.tIdA);
+        R.letture++;
+        return apiFleLettura("/gaming/v1/teamLineup/" + c.id + "/" + turno.matchDay + "/" + mday + "/" + h + "/" + a).then(function (j) {
+          if (j && typeof j === "object" && !Array.isArray(j) && !("home" in j) && !("away" in j) && j.data && typeof j.data === "object") j = j.data;
+          if (!j || typeof j !== "object" || Array.isArray(j)) throw new Error("risposta della partita non valida");
+          [[j.home, h], [j.away, a]].forEach(function (x) {
+            var r = rigaPartitaFle(x[0]);
+            if (!r) return;
+            if (!r.tid) r.tid = x[1];
+            if (r.tid === x[1]) R.lineups.push(r); else R.nonLette.push(x[1]); // squadra diversa da quella del calendario: non verificata
+          });
+        }).catch(function (e) { // errore HTTP o risposta non valida: le due squadre della partita restano DA VERIFICARE
+          R.fallite++; R.nonLette.push(h, a);
+          if (!R.messaggio) R.messaggio = (e && e.http ? "HTTP " + e.http : String(e && e.message || e).slice(0, 40)) + (e && e.msg ? " · " + e.msg : "");
+          if (e && (e.http === 429 || e.http >= 500)) R.fermata = condiviso.fermata = "HTTP " + e.http;
+        });
+      })).then(function () { return new Promise(function (ok) { setTimeout(ok, PARTITE_PAUSA_MS); }); }).then(gruppo);
+    }
+    return gruppo();
   }
   function eseguiConsegne(task) {
     var w = lavoro("Controllo consegne FLE in corso…"), chiuso = false, out = null, timer = null, limite = null;
@@ -5842,13 +8672,19 @@
       if (!att || att.tipo !== "admin" || String(att.run || "") !== String(task.run || "")) { log("FLE CHECK IGNORATO", { run: task.run || "", atteso: att && att.run || "" }); try { w.chiudi(); } catch (e) {} return; }
       risultato.at = new Date().toISOString();
       risultato.run = task.run || "";
+      // PROVA15 (sicurezza): il risultato appartiene a QUESTO accesso e contesto (mai mostrato a un altro account) e porta il ruolo FLE
+      // dimostrato dal sito: lettura cumulativa accettata = amministratore; lettura partita per partita = partecipante
+      risultato.fvmContesto = contestoFle();
+      risultato.ruoloFle = ruoloFleDaComps(risultato.comps);
       var valido = fleControlloValido(risultato);
       // solo un controllo VALIDO sostituisce l'ultimo controllo valido; gli altri restano "ultimo tentativo"
       if (valido) { scrivi("admin_fle", risultato); scrivi("admin_fle_tentativo", null); } else scrivi("admin_fle_tentativo", risultato);
       log("FLE CHECK RESULT", { valido: valido, giornata: risultato.mday, inizio: risultato.mstr || "", adminPagina: risultato.adminPagina, primaInizio: risultato.primaInizio, hdrFrom: risultato.hdrFrom || "",
-        competizioni: (risultato.comps || []).map(function (c) { return c.id + ":" + (c.fuori ? "fuori" : Array.isArray(c.lineups) ? c.lineups.length : "non letta"); }).join(","),
+        competizioni: (risultato.comps || []).map(function (c) { return c.id + ":" + (c.natura && c.natura !== "obbligo" ? "classifica" : c.fuori ? "fuori" : Array.isArray(c.lineups) ? c.lineups.length : "non letta"); }).join(","),
         // 1.3.4: forma breve (la riga di diagnosi ha un limite di 450 caratteri): competizione:fase:codice HTTP
         nonLette: (risultato.dettagli || []).map(function (d) { return d.comp + ":" + d.fase + ":" + (d.http || 0); }).join(","), errori: (risultato.errors || []).length,
+        calIncerti: (risultato.comps || []).filter(function (c) { return c.calIncerto; }).map(function (c) { return c.id; }).join(","), // 1.3.5: turni senza partite
+        perPartita: (risultato.comps || []).filter(function (c) { return c.partite; }).map(function (c) { return c.id; }).join(","), // PROVA5: competizioni lette partita per partita
         primoErrore: String((risultato.errors || [])[0] || "").slice(0, 90), durata: Math.round((Date.now() - Number(task.inizio || Date.now())) / 1000) + " s" });
       log("CONTROLLO CONSEGNE", { giornata: risultato.mday, competizioni: (risultato.comps || []).length, errori: risultato.errors, valido: valido });
       sScrivi("task", null);
@@ -5870,7 +8706,10 @@
       var comps = (Array.isArray(ctl.comps) ? ctl.comps : []).filter(function (c) { return c && !c.del; });
       var mstr = String(ctl.status && ctl.status.mstr || ""), inizio = inizioGiornataFle(mstr);
       var admin = null; try { admin = !!document.querySelector(".admin-icon, nz-icon.anticon-crown"); } catch (e) {}
+      var perPartita = false; // PROVA5: diventa vero alla prima lettura cumulativa rifiutata (HTTP 400)
       out = { mday: mday, mstr: mstr, comps: [], errors: [], dettagli: [], hdrFrom: ctl.hdrFrom || "", adminPagina: admin, primaInizio: inizio ? Date.now() < inizio.getTime() : null };
+      // 1.3.5 (come Android 1.3.1): squadre ISCRITTE, separate per competizione (dati gia letti: nessuna richiesta in piu)
+      out.iscrittePerComp = comps.map(function (c) { return { id: Number(c.id), nome: String(c.name || "").slice(0, 60), type: Number(c.type) || 0, tmids: (Array.isArray(c.tmids) ? c.tmids : []).map(Number).filter(Boolean) }; });
       log("FLE CHECK STEP", { stage: "hdr", hdrKeys: Object.keys(ctl.hdr || {}), hdrFrom: ctl.hdrFrom || "", giornata: mday, competizioni: comps.length });
       function errore(c, fase, e) {
         var http = e && e.http || 0;
@@ -5884,21 +8723,70 @@
       var i = 0;
       (function prossima() {
         if (chiuso) return;
-        if (i >= comps.length) { out.completo = mday > 0 && comps.length > 0 && !out.errors.length; finisci(out); return; }
+        if (i >= comps.length) { out.completo = mday > 0 && comps.length > 0 && !out.errors.length; nomiSconosciute(out).then(function () { finisci(out); }); return; }
         var c = comps[i++];
+        // 1.3.5: Ranking (classifiche a punti) e competizioni di natura da verificare: nessuna lettura delle formazioni,
+        // mai obblighi di consegna (le loro squadre non diventano "non schierate")
+        var natC = naturaCompetizione(c);
+        if (natC !== "obbligo") {
+          out.comps.push({ id: c.id, name: c.name, tmids: [], round: 0, lineups: [], fuori: true, natura: natC });
+          log("FLE CHECK STEP", { stage: "classifica", comp: c.id, natura: natC });
+          prossima(); return;
+        }
         getRiprova("/onboarding/v1/league/competition/calendar/" + c.id).then(function (cal) {
           if (!Array.isArray(cal)) { nonLetta(c, c.tmids || [], 0, "calendario", new Error("risposta del calendario non valida")); return null; }
           var turno = cal.filter(function (r) { return r && Number(r.championshipMatchDay) === mday; })[0];
+          // RC3 (come Android): elenco dei turni della competizione per CONSEGNE FLE PER COMPETIZIONE E TURNO (stessa risposta)
+          var turniC = cal.filter(function (r) { return r && Number(r.matchDay); }).map(function (r) { return { g: Number(r.matchDay), sa: Number(r.championshipMatchDay) || 0, calc: r.calculated === true }; });
           // competizione senza turno in questa giornata: le sue squadre NON giocano qui (mai contate come "non schierate")
-          if (!turno) { out.comps.push({ id: c.id, name: c.name, tmids: [], round: 0, lineups: [], fuori: true }); return null; }
-          var squadre = [];
-          (turno.matches || []).forEach(function (m) { if (m.tIdH) squadre.push(m.tIdH); if (m.tIdA) squadre.push(m.tIdA); });
+          if (!turno) { out.comps.push({ id: c.id, name: c.name, tmids: [], round: 0, lineups: [], fuori: true, turni: turniC }); return null; }
+          var squadre = [], soli = [];
+          // 1.3.5 (collaudo XR): squadra SENZA avversario nel turno (riposo?): mai "mancante", resta da verificare
+          (turno.matches || []).forEach(function (m) { if (!m) return; if (m.tIdH) squadre.push(m.tIdH); if (m.tIdA) squadre.push(m.tIdA); if (!m.tIdH !== !m.tIdA) soli.push(Number(m.tIdH || m.tIdA)); });
           var tmids = squadre.length ? squadre : (c.tmids || []);
-          return getRiprova("/gaming/v1/teamLineup/" + c.id + "/" + turno.matchDay + "/" + mday).then(function (lu) {
+          // 1.3.5 (collaudo XR): dati per CONSEGNE FLE PER COMPETIZIONE dalle STESSE risposte (nessuna lettura in piu):
+          // partite del turno, turno calcolato, calendario incerto (turno senza partite: chi deve giocare non e certo)
+          var datiTurno = { matches: (turno.matches || []).filter(Boolean).map(function (m) { return [Number(m.tIdH) || 0, Number(m.tIdA) || 0]; }),
+            calc: turno.calculated === true, calIncerto: !squadre.length, soli: soli };
+          // PROVA5: prima la lettura cumulativa (amministratori: invariata, un nuovo tentativo dopo 1,5 s come prima);
+          // HTTP 400 = lettura riservata agli amministratori -> lettura PER PARTITA, per questa e per le competizioni seguenti
+          var pathG = "/gaming/v1/teamLineup/" + c.id + "/" + turno.matchDay + "/" + mday;
+          var cumulativa = perPartita ? Promise.reject({ partite: true }) : apiFleLettura(pathG).catch(function (e1) {
+            if (chiuso) throw e1;
+            // come prima: un solo nuovo tentativo dopo 1,5 s; se anche questo e un 400 -> lettura per partita
+            log("FLE CHECK STEP", { stage: "riprova", http: e1 && e1.http || 0, hdrFrom: ctl.hdrFrom || "" });
+            return new Promise(function (ok) { setTimeout(ok, 1500); }).then(function () { return apiFleLettura(pathG); }).catch(function (e2) {
+              if (chiuso || !(e1 && e1.http === 400 && e2 && e2.http === 400)) throw e2;
+              perPartita = true; out.perPartita = { motivo: "lettura cumulativa rifiutata (HTTP 400)", server: e2.msg || e1.msg || "" };
+              log("FLE CHECK STEP", { stage: "per partita", comp: c.id, http: 400, server: e2.msg || e1.msg || "", admin: admin });
+              throw { partite: true };
+            });
+          });
+          return cumulativa.then(function (lu) {
             if (!Array.isArray(lu)) { nonLetta(c, tmids, turno.matchDay, "formazioni", new Error("risposta delle formazioni non valida")); return; }
-            out.comps.push({ id: c.id, name: c.name, tmids: tmids, round: turno.matchDay,
-              lineups: lu.filter(function (l) { return l && l.tid; }).map(function (l) { return { tid: l.tid, ldate: l.ldate || "", visb: l.visb }; }) });
-          }, function (e) { nonLetta(c, tmids, turno.matchDay, "formazioni", e); });
+            // stati ufficiali come Android 1.3.1: act (canale / admin / tavolino / recuperata) e lucnt (salvataggi), niente giocatori
+            out.comps.push({ id: c.id, name: c.name, tmids: tmids, round: turno.matchDay, turni: turniC, matches: datiTurno.matches, calc: datiTurno.calc, calIncerto: datiTurno.calIncerto, soli: datiTurno.soli,
+              lineups: lu.filter(function (l) { return l && l.tid; }).map(function (l) { return { tid: l.tid, ldate: l.ldate || "", visb: l.visb, act: typeof l.act === "number" ? l.act : null, lucnt: typeof l.lucnt === "number" ? l.lucnt : null }; }) });
+          }, function (e) {
+            if (!(e && e.partite)) { nonLetta(c, tmids, turno.matchDay, "formazioni", e); return; }
+            w.stato("Giornata " + mday + ": " + c.name + ", lettura partita per partita…");
+            var registrata = false;
+            return letturaPartiteFle(c, turno, mday, function () { return !chiuso; }, out.perPartita).then(function (P) {
+              // prima dell'inizio (con 2 minuti di margine) una squadra SENZA dati nella risposta non e verificabile da
+              // un partecipante: DA VERIFICARE, mai "mancante". Dopo l'inizio: stessa regola della lettura cumulativa.
+              var prima = !inizio || Date.now() < inizio.getTime() + 2 * 60000, conDati = {}, nonLetteN = {};
+              P.lineups.forEach(function (l) { conDati[Number(l.tid)] = true; });
+              P.nonLette.forEach(function (t) { nonLetteN[Number(t)] = true; });
+              var nascoste = [];
+              if (prima) datiTurno.matches.forEach(function (m) { m.forEach(function (t) { if (t > 0 && !conDati[t] && !nonLetteN[t] && nascoste.indexOf(t) < 0) nascoste.push(t); }); });
+              out.comps.push({ id: c.id, name: c.name, tmids: tmids, round: turno.matchDay, turni: turniC, matches: datiTurno.matches, calc: datiTurno.calc, calIncerto: datiTurno.calIncerto, soli: datiTurno.soli,
+                lineups: P.lineups, partite: true, nascoste: nascoste, partiteNonLette: Object.keys(nonLetteN).map(Number) });
+              registrata = true;
+              log("FLE CHECK STEP", { stage: "partite", comp: c.id, letture: P.letture, fallite: P.fallite, formazioni: P.lineups.length, nonVisibili: nascoste.length, fermata: P.fermata || "" });
+              // partite non lette: controllo NON valido (resta "ultimo tentativo"), le loro squadre DA VERIFICARE
+              if (P.fallite || P.nonLette.length) errore(c, "partite", { http: P.fermata ? Number(P.fermata.replace(/\D/g, "")) : 0, message: (P.nonLette.length / 2) + " partite non lette" + (P.messaggio ? " (" + P.messaggio + ")" : "") });
+            }).catch(function (e3) { if (registrata) errore(c, "partite", e3); else nonLetta(c, tmids, turno.matchDay, "partite", e3); }); // imprevisto: squadre DA VERIFICARE, mai sparite o mancanti
+          });
         }, function (e) { nonLetta(c, c.tmids || [], 0, "calendario", e); })
           .catch(function (e) { errore(c, "lettura", e); })
           .then(function () { if (!chiuso) w.stato("Controllate " + i + "/" + comps.length + " competizioni…"); prossima(); });
@@ -5911,28 +8799,33 @@
       log("FLE CHECK STEP", { stage: "tempo scaduto", run: task.run || "" });
       finisci(r);
     }, Math.max(0, FLE_MAX_MS - (Date.now() - Number(task.inizio || Date.now()))));
-    var atteso = 0, compsChieste = false;
+    var atteso = 0, compsChieste = 0, compsInCorso = false, compsErrore = "";
     // 1.3.4: ricaricando la pagina FLE (AGGIORNA) il sito puo non richiedere di nuovo l'elenco delle competizioni
-    // (lo tiene in memoria): dopo 6 s, con accesso e giornata gia letti, FVM lo chiede UNA volta con le stesse intestazioni
+    // (lo tiene in memoria): dopo 6 s, con accesso e giornata gia letti, FVM lo chiede con le stesse intestazioni (senza convalida).
+    // RC4: fino a 3 tentativi (6, 12, 18 s); risposta accettata anche come testo JSON; il motivo dell'ultimo errore resta per il messaggio
     function chiediCompetizioni() {
-      compsChieste = true;
+      compsChieste++; compsInCorso = true;
+      var tentativo = compsChieste;
       getApi("/onboarding/v1/league/competitions", true).then(function (j) {
+        if (typeof j === "string" && /^\s*[\[{]/.test(j)) { try { j = JSON.parse(j); } catch (e) {} }
         var l = listaCompetizioni(j);
         if (!l.length) throw new Error("risposta non valida");
         if (!ctl.comps) ctl.comps = l;
-        log("FLE CHECK STEP", { stage: "competizioni", da: "FVM", esito: "lette", n: l.length });
+        log("FLE CHECK STEP", { stage: "competizioni", da: "FVM", esito: "lette", n: l.length, tentativo: tentativo });
       }).catch(function (e) {
-        log("FLE CHECK STEP", { stage: "competizioni", da: "FVM", esito: "errore", http: e && e.http || 0, motivo: String(e && e.message || e).replace(/ \/onboarding.*$/, "").slice(0, 60) });
-      });
+        compsErrore = String(e && e.message || e).replace(/ \/onboarding.*$/, "").slice(0, 60);
+        log("FLE CHECK STEP", { stage: "competizioni", da: "FVM", esito: "errore", http: e && e.http || 0, motivo: compsErrore, tentativo: tentativo });
+      }).then(function () { compsInCorso = false; });
     }
     timer = setInterval(function () {
       atteso += 500;
       if (atteso % 5000 === 0) log("FLE CHECK STEP", { stage: "wait", waited: atteso, has: { hdr: !!ctl.hdr, comps: !!ctl.comps, status: !!ctl.status } });
-      if (!ctl.comps && !compsChieste && ctl.hdr && ctl.status && atteso >= 6000) chiediCompetizioni();
+      if (!ctl.comps && !compsInCorso && compsChieste < 3 && ctl.hdr && ctl.status && atteso >= 6000 * (compsChieste + 1)) chiediCompetizioni();
       if (ctl.comps && ctl.status && ((ctl.hdr && ctl.hdrScore >= 2) || atteso >= 6000)) { clearInterval(timer); esegui(); }
       else if (atteso >= 25000) {
         clearInterval(timer);
-        finisci({ mday: 0, comps: [], completo: false, errors: ["Pagina FLE non letta (accesso: " + (ctl.hdr ? "si" : "no") + ", competizioni: " + (ctl.comps ? "si" : "no") + ", giornata: " + (ctl.status ? "si" : "no") + ")"] });
+        finisci({ mday: 0, comps: [], completo: false, errors: ["Pagina FLE non letta (accesso: " + (ctl.hdr ? "si" : "no") + ", competizioni: " + (ctl.comps ? "si" : "no") + ", giornata: " + (ctl.status ? "si" : "no") + ")" +
+          (!ctl.comps && compsErrore ? " · elenco delle competizioni: " + compsErrore + " (" + compsChieste + " tentativi)" : "")] });
       }
     }, 500);
   }
@@ -5940,7 +8833,9 @@
   // ---------------------------------------------------------------- diagnosi condivisa
   // 1.1.0: nel limite di ~3300 caratteri entrano PRIMA le righe di controllo/invio FLE ed errori, poi le altre piu recenti
   // (navigazione, lega sorgente, modalita); tutto in ordine cronologico, con l'indicazione delle righe omesse.
-  var DIAG_PRIORITA = /FLE CHECK|CONTROLLO CONSEGNE|LEGA DI LAVORO|AGGIORNAMENTI|CONTROLLO FLE|INVIO FLE|INVIO CORPO|INVIO FORMATO|INVIO INTESTAZIONI|ESITO|ERRORE|SCADUTA|SALVATAGGIO|TID DIVERSO|PASSAGGIO|FANTACLUB/;
+  // PROVA9: con priorita anche Switch (decisione, scrittura, verifica, scelte) e verifica delle competizioni FLE
+  var DIAG_PRIORITA = /FLE CHECK|CONTROLLO CONSEGNE|LEGA DI LAVORO|AGGIORNAMENTI|CONTROLLO FLE|INVIO FLE|INVIO CORPO|INVIO FORMATO|INVIO INTESTAZIONI|ESITO|ERRORE|SCADUTA|SALVATAGGIO|TID DIVERSO|PASSAGGIO|FANTACLUB|SWITCH|VERIFICA COMPETIZIONI/;
+  var DIAG_PRIORITA_ALTA = /IDENTITA|VERIFICA SQUADRA FLE|VERIFICA FLE|FLE NON AUTORIZZATO|GUARDIA FLE|SELETTORE FLE/; // 1.3.5-RC2
   var DIAG_LIMITE = 3300;
   // niente collegamenti nel testo condiviso: chi lo riceve (es. WhatsApp) non deve ridurlo al solo link dell'API
   function testoDiagnosi(s) {
@@ -5951,9 +8846,13 @@
     var testo = "Fanta Vice Mister Safari " + VERSIONE + " · diagnosi\n" + navigator.userAgent.replace(/\s+/g, " ").slice(0, 160) + "\n";
     var spazio = DIAG_LIMITE - testo.length - 300; // margine per le righe "… omesse"
     var scelte = {}, usato = 0, i;
+    // 0) 1.3.5-RC2: identita dell'account, verifica della squadra e autorizzazione FLE per prime (fino a circa un terzo dello spazio)
+    for (i = righe.length - 1; i >= 0 && usato < spazio * 0.35; i--) {
+      if (DIAG_PRIORITA_ALTA.test(righe[i]) && usato + righe[i].length + 1 <= spazio) { scelte[i] = true; usato += righe[i].length + 1; }
+    }
     // 1) righe prioritarie, dalle piu recenti, fino a circa due terzi dello spazio
     for (i = righe.length - 1; i >= 0 && usato < spazio * 0.65; i--) {
-      if (DIAG_PRIORITA.test(righe[i]) && usato + righe[i].length + 1 <= spazio) { scelte[i] = true; usato += righe[i].length + 1; }
+      if (!scelte[i] && DIAG_PRIORITA.test(righe[i]) && usato + righe[i].length + 1 <= spazio) { scelte[i] = true; usato += righe[i].length + 1; }
     }
     // 2) le altre righe piu recenti, consecutive, nello spazio rimasto
     for (i = righe.length - 1; i >= 0; i--) {
@@ -6191,6 +9090,10 @@
       ldate: (s && s.ldate) || ""
     };
     meRegistra(dati.lega, x, "salvataggio_fvm");
+    // PROVA8: Switch conosciuto per la stessa chiave (risposta del server se ha i campi, altrimenti il corpo inviato)
+    var swS = s ? fvmSwLeggi(s, "salvataggio_fvm") : null;
+    if (!swS || swS.stato === "sconosciuto") swS = dati.sw || swS;
+    swRegistra(fvmMeChiave(dati.lega, x), swS, "salvataggio_fvm");
   }
   // divisione della squadra (lettera nell'indirizzo del sito): imparata dalle richieste del sito, altrimenti "A".
   // Una divisione sbagliata non puo dare un falso avviso: la risposta deve avere la squadra e la competizione attese.
@@ -6266,8 +9169,11 @@
           var k = fvmMeChiave(slug, uff), rif = (leggi("me_rif", {}) || {})[k], ign = leggi("me_ign", {}) || {};
           var dec = fvmMeDecidi({ attiva: meAttiva(), rif: rif, uff: uff, ignorata: ign[k], circuito: !!trovaFleTid(uff.tid) });
           meLog("CONTROLLO", { perche: perche, chiave: k, divisione: div, esito: dec.azione, motivo: dec.motivo, riferimento: rif ? rif.fonte : "nessuno" });
-          if (dec.azione === "adotta") meRegistra(slug, uff, "adottata");
-          if (dec.azione === "inizializza") meRegistra(slug, uff, "osservata");
+          // PROVA8: Switch della formazione ufficiale (stessa risposta), portato con la formazione in ACQUISISCI
+          uff.sw = fvmSwDaTesto(x.testo, "ufficiale");
+          if (dec.azione === "adotta") { meRegistra(slug, uff, "adottata"); swRegistra(k, uff.sw, "adottata"); }
+          if (dec.azione === "inizializza") { meRegistra(slug, uff, "osservata"); swRegistra(k, uff.sw, "osservata"); }
+          if (!dec.mostra && dec.azione !== "adotta" && dec.azione !== "inizializza") meControllaSwitch(slug, uff, k);
           if (dec.mostra) {
             // compilazione iniziata mentre si leggeva: nessun avviso sopra la formazione, si ricontrolla piu tardi
             if (meCompilazione()) { meRimanda(slug); meLog("AVVISO", { chiave: k, esito: "rimandato: compilazione della formazione in corso" }); return; }
@@ -6342,6 +9248,58 @@
       });
     });
   }
+  // PROVA8 · MODIFICHE ESTERNE dello SWITCH (formazione invariata): Switch aggiunto, cambiato o tolto fuori da FVM per
+  // la stessa lega/competizione/squadra/giornata. Prima lettura = riferimento senza avviso; NON ORA per quella situazione.
+  function meControllaSwitch(slug, uff, k) {
+    var s = uff && uff.sw;
+    if (!s || s.stato === "sconosciuto") return;
+    var r = (leggi("sw_rif", {}) || {})[k];
+    if (!r) { swRegistra(k, s, "osservata"); meLog("SWITCH", { chiave: k, esito: "prima lettura: riferimento registrato, nessun avviso" }); return; }
+    if (r.stato !== "presente" && r.stato !== "assente") return;
+    var imp = fvmSwImpronta(s);
+    if (r.imp === imp) return;
+    var ign = leggi("sw_ign", {}) || {};
+    if (ign[k] === imp) { meLog("SWITCH", { chiave: k, esito: "gia segnalato e rimandato con NON ORA" }); return; }
+    if (meCompilazione()) { meRimanda(slug); meLog("SWITCH", { chiave: k, esito: "avviso rimandato: compilazione della formazione in corso" }); return; }
+    meMostraAvvisoSwitch(slug, uff, r, k);
+  }
+  function meMostraAvvisoSwitch(slug, uff, r, k) {
+    monta();
+    if (!radice) return;
+    var vecchio = radice.querySelector("#fvm-me");
+    if (vecchio) vecchio.remove();
+    var s = uff.sw, imp = fvmSwImpronta(s), um = { nomi: uff.nomi || {} };
+    var prima = r.stato === "presente" ? swCoppia({ stato: "presente", a: r.a, b: r.b }, um) : "nessuno";
+    var titolo = r.stato === "assente" ? "Switch aggiunto fuori da FVM" : s.stato === "assente" ? "Switch tolto fuori da FVM" : "Switch cambiato fuori da FVM";
+    var circuito = !!trovaFleTid(uff.tid);
+    var box = document.createElement("div");
+    box.className = "ov";
+    box.id = "fvm-me";
+    box.innerHTML = "<div class='cd' style='margin-top:18%;border:2px solid #e2b33c'><div class='lb' style='color:#e2b33c'>FANTA VICE MISTER</div>" +
+      "<div class='t2' style='margin-top:6px'>" + esc(titolo) + "</div>" +
+      "<div class='mu' style='margin-top:6px'>" + esc(nomeLega(slug)) + (uff.giornata ? " · " + uff.giornata + "ª giornata" : "") + ": la formazione è la stessa, lo Switch no.</div>" +
+      "<div class='mu' style='margin-top:4px'>• Prima: " + esc(prima) + "</div><div class='mu'>• Ora: " + esc(swCoppia(s, um)) + "</div>" +
+      "<div class='mu' style='margin-top:8px;color:#fbbf24;font-weight:700'>Vuoi usare lo Switch attuale" + (circuito ? " anche per FLE?" : "?") + "</div>" +
+      "<button class='bt oro' data-me='acquisisci'>" + (circuito ? "ACQUISISCI E CONTROLLA FLE" : "ACQUISISCI") + "</button>" +
+      "<button class='bt' data-me='nonora'>NON ORA</button>" +
+      "<div class='mu' style='margin-top:6px;font-size:11px'>Nessun invio: l'invio su FLE resta il PASSO 3 con conferma.</div></div>";
+    radice.appendChild(box);
+    meLog("AVVISO", { chiave: k, tipo: "switch", prima: r.imp, ora: imp });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-me]"), function (el) {
+      el.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        var a = el.getAttribute("data-me");
+        box.remove();
+        if (a === "nonora") {
+          var ign = leggi("sw_ign", {}) || {};
+          ign[k] = imp; scrivi("sw_ign", ign);
+          meLog("NON ORA", { chiave: k, tipo: "switch", nota: "stesso Switch non piu segnalato; un nuovo cambio si" });
+          return;
+        }
+        meAcquisisci(slug, uff, circuito);
+      });
+    });
+  }
   // ACQUISISCI: la formazione ufficiale letta diventa la formazione della lega in FVM (come dopo Salva formazione).
   // Poi, solo per le squadre del circuito, il normale controllo FLE. Nessun invio: il PASSO 3 resta da confermare.
   function meAcquisisci(slug, uff, controllaFle) {
@@ -6349,7 +9307,9 @@
     uff.titolari.concat(uff.panchina).forEach(function (pid) { var x = uff.nomi[pid] || info[pid]; if (x) nomi[pid] = { n: x.n || "", r: Number(x.r || 0) }; });
     var corpo = { idcomp: uff.comp, tid: uff.tid, mday: uff.giornata, cmday: uff.giornataSA, mdl: uff.modulo, starts: uff.titolari.slice(), bench: uff.panchina.slice(), capt: uff.capt };
     var dati = { at: Date.now(), lega: slug, suFle: false, modulo: uff.modulo, titolari: uff.titolari.slice(), panchina: uff.panchina.slice(), cambiata: false,
-      tid: uff.tid, comp: uff.comp, capt: uff.capt, corpo: JSON.stringify(corpo), nomi: nomi, ok: true, fonte: "acquisizione" };
+      tid: uff.tid, comp: uff.comp, capt: uff.capt, corpo: JSON.stringify(corpo), nomi: nomi, ok: true, fonte: "acquisizione",
+      sw: uff.sw || null }; // PROVA8: Switch della formazione ufficiale acquisita
+    if (uff.sw) swRegistra(fvmMeChiave(slug, uff), uff.sw, "acquisizione");
     var map = trovaFleTid(uff.tid);
     if (map) { dati.fleTid = map.fleTid; dati.squadra = map.squadra; }
     scrivi("ultima", dati);
@@ -6558,9 +9518,16 @@
     // salvo un'attivita FLE gia in corso in questa scheda.
     if (!sLeggi("sessione")) {
       sScrivi("sessione", Date.now());
-      if (!sLeggi("task") && leggi("modo", "lega_fle") !== "lega_fle" && !legaLavoro() && !fleNonAssociata()) { scrivi("modo", "lega_fle"); log("MODO", { a: "lega_fle", perche: "nuova sessione" }); }
+      if (piattaformaScelta() === "fantaclub") {
+        if (!sLeggi("task") && leggi("modo", "lega_fle") !== "lega_fle" && !legaLavoro() && !fleNonAssociata()) { scrivi("modo", "lega_fle"); log("MODO", { a: "lega_fle", perche: "nuova sessione" }); }
+      } else if (!sLeggi("task") && !legaLavoro()) {
+        // 1.3.5 (Leghe Fantacalcio): LEGA + FLE solo con la squadra FLE verificata, altrimenti SOLO LEGA
+        var mI = modoInizialeLeghe();
+        if (leggi("modo", "lega_fle") !== mI) { scrivi("modo", mI); log("MODO", { a: mI, perche: "nuova sessione" + (mI === "solo_lega" ? " (squadra FLE non verificata)" : "") }); }
+      }
     }
     controllaPagina();
+    homeDopoLega(); // 1.3.5 (2° collaudo XR): CAMBIA LEGA senza lega FLE nota
     riconosciSorgente();
     if (applicaBloccoModo("avvio")) return;
     aggiornaFab();
@@ -6580,8 +9547,20 @@
       if (task.fase === "dati" && pzL[1] === task.slug && !/\/settings/.test(location.pathname)) { eseguiControlloLega(task); return; }
       if (task.fase === "regole" && pzL[1] === task.slug && /\/settings/.test(location.pathname)) { leggiRegolaLega(task); return; }
     }
+    // 1.3.5: VERIFICA SQUADRA FLE (sola lettura): pagina formazione della lega, poi FLE (competizioni, pagina formazione)
+    if (task && task.tipo === "verifica") {
+      if (suFle()) {
+        if (task.fase === "select_fle") { task.fase = "dash"; sScrivi("task", task); log("SELETTORE FLE", { azione: "FLE raggiunta · verifica", url: location.pathname }); }
+        eseguiVerificaFle(task); return;
+      }
+      var mV = location.pathname.match(/^\/([^\/]+)\/view\/competition\/(\d+)\/lineup/);
+      if (task.fase === "lega" && mV && mV[1] === task.lega) { eseguiVerificaLega(task); return; }
+      if (task.fase === "select_fle") { selezionaFleNelSelettore(task); return; }
+      if (task.fase === "lega" && !suLogin()) return; // pagina della lega: si apre da sola la sua formazione (controllaPagina)
+    }
     if (task && suFle()) {
       if (task.tipo === "admin") { eseguiConsegne(task); return; }
+      if (task.tipo === "turno") { eseguiTurni(task); return; } // RC3: CONSEGNE FLE PER COMPETIZIONE E TURNO (sola lettura)
       if (task.tipo === "check") {
         // Safari puo completare il cambio lega con una navigazione prima che il timer
         // del selettore riesca a cambiare fase. Se siamo gia dentro FLE, il cambio
@@ -6593,6 +9572,7 @@
         eseguiControllo(task); return;
       }
       if (task.tipo === "invio") { eseguiInvio(task); return; }
+      if (task.tipo === "riverifica") { eseguiRiverifica(task); return; } // PROVA11: RIPROVA VERIFICA, solo letture
     }
     // Rientro automatico dopo il login: Leghe Fantacalcio porta normalmente
     // al selettore delle leghe; se l'accesso era stato avviato da FVM,
@@ -6620,6 +9600,7 @@
     var apri = sLeggi("apri"), flash = sLeggi("flash");
     sScrivi("apri", null); sScrivi("flash", null);
     if (apri === "admin") { apriAdmin(); return; }
+    if (apri === "turni") { apriTurni(); return; } // RC3
     if (apri === "ufficiale") { apriUfficiale(); return; }
     if (apri === "main") { apriPannello(); if (flash) avviso(flash); return; }
     if (suFle() && sLeggi("vai_campo_fle")) { controllaPagina(); return; }
@@ -6644,6 +9625,7 @@
       log("PAGINA", ultimaPagina);
       uscitaCompletata();
       controllaPagina();
+      homeDopoLega();
       if (sLeggi("ritorno_login") && !suLogin() && !elementoTesto(/^accedi$/i)) {
         sScrivi("ritorno_login", null);
         log("ACCESSO", "gia collegato · ritorno automatico a FVM");
