@@ -3,6 +3,15 @@
 Per ogni versione: numero, data, novità, correzioni, limitazioni note.
 iPhone (Safari): il riepilogo breve della versione più recente è anche in `aggiornamento.json` (riquadro AGGIORNA ORA).
 
+## iPhone (Safari) 1.3.6 rev. 1 (revisione tecnica 1.3.6.1) — ottobre 2026
+**Correzioni**
+- Area Admin: con il codice Admin FVM il controllo FLE di tutte le squadre, le consegne per competizione e turno e la condivisione
+  WhatsApp funzionano per chiunque, anche per un normale partecipante FLE (il ruolo sul sito sceglie solo il modo di lettura).
+- Se FLE non concede la lettura completa, FVM legge partita per partita, anche per il singolo turno: le squadre non visibili prima
+  dell'inizio, le partite non lette e le squadre senza avversario risultano «non verificabili», mai «mancanti»; schermate e WhatsApp lo indicano.
+**Note**
+- Numero mostrato invariato (1.3.6); la revisione «1.3.6 rev. 1» compare solo nel riquadro aggiornamenti e nella diagnosi.
+
 ## iPhone (Safari) 1.3.6 — ottobre 2026
 **Novità**
 - Prima installazione su iPhone in 3 passi (Userscripts, installazione di FVM, icona sulla Home). L'ultimo passo si completa nella Home di FVM:

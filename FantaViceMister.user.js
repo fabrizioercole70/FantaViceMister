@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fanta Vice Mister
 // @description  Fanta Vice Mister per Safari (iPhone e Mac) e browser PC: ordine della panchina, controllo e invio su FLE, area admin.
-// @version      1.3.6
+// @version      1.3.6.1
 // @updateURL    https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @downloadURL  https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @match        https://leghe.fantacalcio.it/*
@@ -24,7 +24,10 @@
   if (window.__FVM_SAFARI__) return;
   window.__FVM_SAFARI__ = true;
 
-  var VERSIONE = "1.3.6";
+  var VERSIONE = "1.3.6.1"; // 1.3.6.1: numero TECNICO (confronti di aggiornamento, dati salvati); visibile 1.3.6
+  var VERSIONE_VISIBILE = "1.3.6";
+  // «1.3.6.1» -> «1.3.6 rev. 1» (riquadro aggiornamenti e diagnosi); numeri a 3 cifre invariati
+  function etichettaVersione(v) { var p = String(v || "").split("."); return p.length === 4 && /^\d+$/.test(p[3]) && Number(p[3]) > 0 ? p.slice(0, 3).join(".") + " rev. " + Number(p[3]) : String(v || ""); }
   var PREFISSO = "fvm_";
 
   // ---------------------------------------------------------------- 1.1.0 Fantaclub · fase 2: passaggio tra domini
@@ -1177,7 +1180,7 @@
         var barraFvm = null;
         try { var bs = fvm && fvm.shadowRoot && fvm.shadowRoot.querySelector(".barra,.b"); if (bs) barraFvm = bs.getBoundingClientRect(); } catch (e) {}
         var dellaBarra = function (el) { return !!(fvm && el && (el === fvm || fvm.contains(el))); };
-        righe.push("FVM " + VERSIONE + " · ANALISI " + new Date().toLocaleTimeString("it-IT") + " · " + location.hostname + location.pathname);
+        righe.push("FVM " + etichettaVersione(VERSIONE) + " (" + VERSIONE + ") · ANALISI " + new Date().toLocaleTimeString("it-IT") + " · " + location.hostname + location.pathname);
         righe.push("antipubblicità " + (attiva ? "ACCESA" : "SPENTA") + " · schermo " + w + "x" + h + " · barra FVM " + (barraFvm ? misura(barraFvm) : "assente"));
         righe.push("bloccati: iframe " + conta.iframe + " · script " + conta.script + " · finestre " + conta.overlay + " · partenze automatiche impedite " + conta.play + " · video pubblicitari fermati " + conta.video + " · lettori resi muti " + conta.muti + " · veli " + conta.veli);
 
@@ -5216,7 +5219,7 @@
     var completato = "";
     if (ok && aggConfronta(VERSIONE, ok.a) === 0) {
       completato = "<div class='cd' style='border:2px solid #3fae4a'><div class='lb' style='color:#4ade80'>AGGIORNAMENTO COMPLETATO ✓</div>" +
-        "<div class='t2'>Fanta Vice Mister " + esc(VERSIONE) + " è attivo</div>" + (ok.da ? "<div class='mu'>Versione precedente: " + esc(ok.da) + "</div>" : "") +
+        "<div class='t2'>Fanta Vice Mister " + esc(etichettaVersione(VERSIONE)) + " è attivo</div>" + (ok.da ? "<div class='mu'>Versione precedente: " + esc(etichettaVersione(ok.da)) + "</div>" : "") +
         (novitaVersione().length ? "<div class='mu' style='margin-top:6px'><b>Cosa cambia</b></div>" + novitaVersione().map(function (x) { return "<div class='mu'>• " + esc(x) + "</div>"; }).join("") : "") +
         "<button class='bt oro' data-a='agg_ok'>OK</button></div>";
     }
@@ -5226,7 +5229,7 @@
     var d = s.nuova;
     var elenco = function (t, v) { return v.length ? "<div class='mu' style='margin-top:6px'><b>" + t + "</b></div>" + v.map(function (x) { return "<div class='mu'>• " + esc(x) + "</div>"; }).join("") : ""; };
     return completato + "<div class='cd' style='border:2px solid #e2b33c'><div class='lb' style='color:#e2b33c'>AGGIORNAMENTO DISPONIBILE</div>" +
-      "<div class='mu'>Versione installata: <b>" + esc(VERSIONE) + "</b></div>" +
+      "<div class='mu'>Versione installata: <b>" + esc(etichettaVersione(VERSIONE)) + "</b></div>" +
       "<div class='mu'>Nuova versione: <b>" + esc(d.versione) + "</b>" + (d.data ? " · " + esc(d.data) : "") + "</div>" +
       (s.attesa ? "<div style='color:#fbbf24;margin-top:6px;font-size:13px'>La versione " + esc(d.versione) + " non è ancora attiva: completa i passi di AGGIORNA ORA, poi ricarica la pagina.</div>" : "") +
       elenco("Cosa cambia", d.novita) + elenco("Correzioni", d.correzioni) + elenco("Limitazioni note", d.limitazioni) +
@@ -5247,7 +5250,7 @@
     pannello.className = "ov";
     radice.appendChild(pannello);
     pannello.innerHTML = "<div class='cd'><button class='x' data-a='indietro'>INDIETRO</button><div class='t1'>AGGIORNA ORA</div>" +
-      "<div class='mu'>Da " + esc(VERSIONE) + " a " + esc(s.nuova.versione) + ". L'aggiornamento lo installa l'estensione Userscripts: Fanta Vice Mister non può farlo da solo.</div></div>" +
+      "<div class='mu'>Da " + esc(etichettaVersione(VERSIONE)) + " a " + esc(etichettaVersione(s.nuova.versione)) + ". L'aggiornamento lo installa l'estensione Userscripts: Fanta Vice Mister non può farlo da solo.</div></div>" +
       "<div class='cd'><div class='lb'>PASSI</div>" +
       "<div class='mu'>1. Nella barra di Safari tocca l'icona delle estensioni (il pezzo di puzzle, oppure <b>AA</b> → Estensioni).</div>" +
       "<div class='mu'>2. Tocca <b>Userscripts</b>.</div>" +
@@ -5502,7 +5505,7 @@
     iconaHomeInizio(); // G1: prima installazione o FVM gia in uso (prima che la Home scriva versione_usata)
     var msgIcona = iconaHomeMessaggio(piattaformaScelta() === "fantaclub" ? !!leggi("fc_connesso", null) : conn), iconaDaFare = iconaHomeDaCompletare();
     var h = "";
-    h += "<div class='hero'><img src='" + LOGO_FVM + "' alt='FVM'><div style='flex:1'><button class='x' data-a='chiudi'>CHIUDI</button><div class='ht'>FANTA VICE<br>MISTER</div><div class='hs'>v" + VERSIONE + " · Stagione 2026/27</div></div></div>";
+    h += "<div class='hero'><img src='" + LOGO_FVM + "' alt='FVM'><div style='flex:1'><button class='x' data-a='chiudi'>CHIUDI</button><div class='ht'>FANTA VICE<br>MISTER</div><div class='hs'>v" + VERSIONE_VISIBILE + " · Stagione 2026/27</div></div></div>";
     h += aggRiquadro(); // 1.3.4: aggiornamento disponibile / completato (solo se esiste davvero)
     // 1.0: riquadro di benvenuto alla prima apertura (sostituisce i passi login della guida)
     if (!leggi("benvenuto_ok", false) && !msgIcona) {
@@ -5588,7 +5591,7 @@
     h += "<div style='display:flex;flex-direction:column;align-items:center;gap:6px;margin-top:14px'>" +
       "<img src='" + LOGO_FLE + "' alt='FantaLegaEuropa' style='width:86px;height:86px;object-fit:contain;display:block'>" +
       "<div class='mu' style='text-align:center;font-size:11px;font-weight:700'>Per le competizioni della FantaLegaEuropa</div></div>";
-    h += "<div class='mu' style='text-align:center;margin-top:6px'>Fanta Vice Mister " + VERSIONE + " · Stagione 2026/27</div>";
+    h += "<div class='mu' style='text-align:center;margin-top:6px'>Fanta Vice Mister " + VERSIONE_VISIBILE + " · Stagione 2026/27</div>";
     pannello.innerHTML = h;
     adattaUltimoInvio();
     var cb = pannello.querySelector("#fvm-ricorda");
@@ -7780,11 +7783,12 @@
     return comps.some(function (c) { return c && Array.isArray(c.lineups); }) ? "amministratore" : "non_verificato";
   }
   function ruoloFleDi(r) { return r && (r.ruoloFle === "amministratore" || r.ruoloFle === "partecipante") ? r.ruoloFle : "non_verificato"; }
+  // ADM1: il ruolo FLE NON decide piu cosa si vede nell'Area Admin (basta il codice Admin FVM): indica solo COME e stato letto
   function testoRuoloFle(ruolo, DF) {
     var n = DF && DF.nascosti || 0, altri = n ? " (" + n + " controlli di altri accessi o versioni precedenti non mostrati, non cancellati)" : "";
-    return ruolo === "amministratore" ? "Ruolo FLE: amministratore, confermato dal sito nell'ultimo controllo di questo accesso." + altri
-      : ruolo === "partecipante" ? "Ruolo FLE: il sito NON riconosce questo account come amministratore FLE (lettura riservata rifiutata): riepilogo amministrativo non mostrato." + altri
-      : "Ruolo FLE non ancora verificato per questo accesso: nessun riepilogo mostrato finché il controllo (sola lettura) non lo conferma." + altri;
+    return ruolo === "amministratore" ? "Lettura FLE completa: il sito concede a questo account la lettura riservata agli amministratori FLE (ultimo controllo di questo accesso)." + altri
+      : ruolo === "partecipante" ? "Lettura FLE partita per partita: il sito non concede a questo account la lettura riservata agli amministratori FLE. Riepilogo con i soli dati visibili al tuo account: ⚪ = non verificabile, mai mancante." + altri
+      : "Nessun controllo FLE di questo accesso: premi CONTROLLA SU FLE (sola lettura)." + altri;
   }
   function datiFle() {
     var v = leggi("admin_fle", null), t = leggi("admin_fle_tentativo", null), ms = function (x) { return x ? Date.parse(x.at || "") || 0 : 0; };
@@ -8072,6 +8076,21 @@
     const S = statoLeghe({turno: t, formazioni: formazioniLette ? res.formazioni : null, formazioniErrore: res.formazioniErrore || "", tipoGioco: res.tipoGioco || "",
       squadre, nonCalcolate, giornataSerieA: Number(st.mday || 0), inizioGiornata: st.mstr || "", regola: null, ora});
     S.righe.forEach(x => { const n = nomi[Number(x.tid)]; x.lega = n ? String(n.sourceLeague || "") : ""; });
+    // ADM1: turno letto partita per partita (account senza lettura completa): dopo il motore degli stati (NON modificato) le squadre
+    // senza dati per lettura non possibile diventano non verificabili con il motivo, mai mancanti; conteggi ricalcolati
+    if (res.perPartita) {
+      const mot = {};
+      (res.nascoste || []).forEach(x => { mot[Number(x)] = "formazione non visibile al tuo account prima dell'inizio: non verificabile, mai mancante"; });
+      (res.soli || []).forEach(x => { mot[Number(x)] = "senza avversario nel turno: non letta per partita"; });
+      (res.partiteNonLette || []).forEach(x => { mot[Number(x)] = "partita non letta"; });
+      S.righe.forEach(x => {
+        const m = mot[Number(x.tid)];
+        if (!m || ["presente", "recuperata", "tavolino", "futura"].indexOf(x.stato) >= 0) return;
+        x.stato = "non_verificabile"; x.nota = m; delete x.statoUfficiale; delete x.evidenzia; delete x.scaduta;
+      });
+      const cn = {}; S.righe.forEach(x => { cn[x.stato] = (cn[x.stato] || 0) + 1; }); S.conta = cn;
+      S.perPartita = true;
+    }
     // ordine: problemi prima (assenti, recuperate, tavolino), poi provvisori, attese, non verificabili, presenti, future
     const P = {assente: 0, recuperata: 1, tavolino: 2, assente_provvisorio: 3, non_verificabile: 4, in_attesa: 5, presente: 6, futura: 7};
     S.righe.sort((a, b) => ((a.stato in P ? P[a.stato] : 9) - (b.stato in P ? P[b.stato] : 9)) || String(a.squadra).localeCompare(String(b.squadra)));
@@ -8108,6 +8127,7 @@
     const righe = ["📋 CONSEGNE FLE · " + C.nome,
       (S.giornataLega || "?") + "° turno FLE · giornata di Serie A " + (S.giornataSerieA || "?") + " · " + (FASI_TURNO[S.fase] || ND) + (S.inizio ? " · inizio " + S.inizio : ""),
       "Controllo: " + (quando || ND) + " · fonte: FantaLegaEuropa-FLE"];
+    if (S.perPartita) righe.push("ℹ️ Letta partita per partita (account senza privilegi admin FLE): solo i dati visibili a questo account; non verificabili = mai mancanti."); // ADM1
     ((R && R.errori) || []).forEach(e => righe.push("⚠️ " + e));
     if (R && R.formazioniErrore) righe.push("⚠️ formazioni del turno non lette: " + R.formazioniErrore);
     const rie = riepilogoStati(S.righe);
@@ -8154,8 +8174,9 @@
     var h = "<div class='cd'><button class='x' data-a='admin'>INDIETRO</button><div class='lb'>AREA ADMIN · FLE</div><div class='t1'>Consegne FLE</div>" +
       "<div class='mu'>Competizione e turno a scelta · sola lettura, con l'accesso FLE di questo dispositivo.</div></div>";
     var fine = function () { pannello.innerHTML = h; eventiTurni(null); };
-    // stesse condizioni dei dati FLE dell'Area Admin (pertinenti e ruolo di amministratore FLE confermato dal sito)
-    if (!am.ok || ruolo !== "amministratore") { h += "<div class='cd'><div class='mu'>" + esc(am.ok ? testoRuoloFle(ruolo, DF) : am.testo) + "</div></div>"; return fine(); }
+    // stesse condizioni dei dati FLE dell'Area Admin (pertinenti); ADM1: nessun requisito sul ruolo FLE
+    if (!am.ok) { h += "<div class='cd'><div class='mu'>" + esc(am.testo) + "</div></div>"; return fine(); }
+    if (!r) { h += "<div class='cd'><div class='mu'>" + esc(testoRuoloFle("", DF)) + "</div></div>"; return fine(); } // ADM1: prima serve un controllo FLE
     var arch = archivioTurni(), lett = {};
     Object.keys(arch).forEach(function (k) { var x = arch[k]; if (Array.isArray(x.turni) && x.turni.length) lett[x.comp] = x.turni; });
     // RC6: giornata corrente = la più recente conosciuta (controllo generale o letture dei turni): il turno proposto passa da solo alla nuova giornata
@@ -8200,7 +8221,8 @@
         assente_provvisorio: ["🟠", "Nessuna formazione · turno non ancora calcolato (provvisorio)", "#fbbf24"], in_attesa: ["⏳", "In attesa / non ancora visibile", "#fbbf24"], futura: ["·", "Turno futuro", "#7d8799"], non_verificabile: ["❔", FVM_ND, "#aab3c2"] };
       h += "<div style='margin-top:10px;font-weight:800;font-size:15px'>" + esc(C.nome) + " · " + esc(S.giornataLega) + "° turno FLE · giornata Serie A " + esc(S.giornataSerieA) + "</div>" +
         "<div class='mu'>Stato del turno: " + esc(FASI_TURNO[S.fase] || FVM_ND) + (S.inizio ? " · inizio giornata " + esc(S.inizio) : "") + " · " + esc(S.squadre) + " squadre</div>" +
-        "<div class='mu'>Lettura: " + esc(dataCompleta(new Date(R.at))) + " · strumenti admin nella pagina: " + (R.admin ? "sì (corona)" : "non rilevati") + "</div>";
+        "<div class='mu'>Lettura: " + esc(dataCompleta(new Date(R.at))) + " · strumenti admin nella pagina: " + (R.admin ? "sì (corona)" : "non rilevati") + "</div>" +
+        (S.perPartita ? "<div class='mu' style='font-size:12px'>Letta partita per partita (account senza privilegi admin FLE): solo i dati visibili al tuo account.</div>" : ""); // ADM1
       (R.errori || []).concat(R.formazioniErrore ? ["formazioni del turno non lette: " + R.formazioniErrore] : []).forEach(function (e) { h += "<div style='color:#f87171;font-size:13px'>" + esc(e) + "</div>"; });
       var rie = riepilogoStati(S.righe);
       h += "<div style='margin-top:6px;font-size:14px;font-weight:800'>" + (rie.length ? rie.map(function (x) { return "<span style='color:" + x.colore + "'>" + x.simbolo + " " + x.n + " " + esc(x.etichetta) + "</span>"; }).join(" · ") : "nessuna squadra nel turno") + "</div>";
@@ -8225,7 +8247,7 @@
     eventiTurni({ C: C, turno: turno, R: R, S: S, sel: sel });
   }
   function eventiTurni(x) {
-    var ammesso = function () { return controlloFleAdminAmmesso().ok && ruoloFleDi(datiFle().mostrato) === "amministratore"; };
+    var ammesso = function () { return controlloFleAdminAmmesso().ok; }; // ADM1: nessun requisito sul ruolo FLE
     Array.prototype.forEach.call(pannello.querySelectorAll("select"), function (s) {
       s.addEventListener("change", function () {
         if (s.id === "fvm-tu-comp") sScrivi("turni_sel", { comp: Number(s.value), turno: 0 });
@@ -8319,8 +8341,37 @@
         // solo i campi che servono (niente giocatori)
         out.formazioni = lu.filter(function (l) { return l && Number(l.tid); }).map(function (l) { return { tid: Number(l.tid), ldate: String(l.ldate || ""), visb: l.visb, mdl: String(l.nmdl || l.mdl || ""), act: typeof l.act === "number" ? l.act : null, lucnt: typeof l.lucnt === "number" ? l.lucnt : null }; });
         return out;
-      }, function (e) { out.formazioni = null; out.formazioniErrore = msg(e); out.http = e && e.http || 0; return out; });
+      }, function (e) {
+        // ADM1: lettura cumulativa rifiutata (HTTP 400, riservata agli amministratori FLE) -> lettura PER PARTITA come il controllo
+        // generale (PROVA5): stessa funzione, stesse regole. Altri errori: come prima (formazioni non lette = non verificabili)
+        if (!(e && e.http === 400)) { out.formazioni = null; out.formazioniErrore = msg(e); out.http = e && e.http || 0; return out; }
+        return turnoPerPartitaFle(out, t, e);
+      });
     }).catch(function (e) { out.errori.push(msg(e)); return out; });
+  }
+  // ADM1: un turno letto partita per partita. Squadre senza dati PRIMA dell'inizio (+2 minuti, come PROVA5) o con inizio non letto =
+  // non visibili al tuo account (non verificabili, mai mancanti); partite non lette e squadre senza avversario = non verificabili
+  function turnoPerPartitaFle(out, t, e) {
+    var sa = Number(t.championshipMatchDay) || 0, cond = { fermata: "" };
+    out.perPartita = { motivo: "lettura cumulativa rifiutata (HTTP 400)", server: e && e.msg || "" };
+    log("FLE TURNO STEP", { stage: "per partita", comp: out.comp, turno: Number(t.matchDay), http: 400 });
+    return letturaPartiteFle({ id: out.comp }, t, sa, function () { return true; }, cond).then(function (P) {
+      var mday = out.status ? out.status.mday : 0, inizio = mday && sa === mday ? dataFle(out.status.mstr) : null;
+      var prima = !mday || sa > mday || (sa === mday && (!inizio || Date.now() < inizio.getTime() + 2 * 60000));
+      var conDati = {}, nonLette = {}, soli = [];
+      P.lineups.forEach(function (l) { conDati[Number(l.tid)] = true; });
+      P.nonLette.forEach(function (x) { nonLette[Number(x)] = true; });
+      (t.matches || []).forEach(function (m) { var h = Number(m && m.tIdH) || 0, a = Number(m && m.tIdA) || 0; if ((h > 0) !== (a > 0)) soli.push(h > 0 ? h : a); });
+      out.formazioni = P.lineups.map(function (l) { return { tid: Number(l.tid), ldate: l.ldate, visb: l.visb, mdl: "", act: l.act, lucnt: l.lucnt }; });
+      out.partiteNonLette = Object.keys(nonLette).map(Number);
+      out.soli = soli.filter(function (x) { return !conDati[x]; });
+      out.nascoste = [];
+      if (prima) (t.matches || []).forEach(function (m) { [Number(m && m.tIdH) || 0, Number(m && m.tIdA) || 0].forEach(function (x) { if (x > 0 && !conDati[x] && !nonLette[x] && soli.indexOf(x) < 0 && out.nascoste.indexOf(x) < 0) out.nascoste.push(x); }); });
+      out.perPartita.letture = P.letture; out.perPartita.fallite = P.fallite;
+      if (P.fallite || P.nonLette.length) out.errori.push((P.nonLette.length / 2) + " partite non lette" + (P.messaggio ? " (" + P.messaggio + ")" : "") + ": le loro squadre sono non verificabili");
+      log("FLE TURNO STEP", { stage: "partite", comp: out.comp, letture: P.letture, fallite: P.fallite, formazioni: P.lineups.length, nonVisibili: out.nascoste.length, fermata: P.fermata || "" });
+      return out;
+    }, function (e2) { out.formazioni = null; out.formazioniErrore = "lettura partita per partita non riuscita: " + String(e2 && e2.message || e2).slice(0, 100); return out; });
   }
   // sulla pagina FLE: una lettura alla volta con 1,5 s di pausa; 30 s per lettura, 170 s in tutto; poi ritorno alla schermata
   function eseguiTurni(task) {
@@ -8416,6 +8467,9 @@
     var at = R.at ? new Date(R.at) : null, prima = R.inizio && at && at.getTime() < R.inizio.getTime();
     var righe = ["📊 FLE · " + (R.mday ? R.mday + "ª giornata di Serie A — giornata generale FLE" : "giornata non letta") + (R.inizio ? " · inizio " + dataBreve(R.inizio) : "")];
     if (!R.completo) righe.push(testoIncompleto(R));
+    // ADM1: riepilogo di un account senza lettura completa: dichiarato nel messaggio
+    var nPart = CC && CC.comps ? CC.comps.filter(function (C) { return C.partite; }).length : 0;
+    if (nPart) righe.push("ℹ️ Letta partita per partita (" + nPart + " competizioni, account senza privilegi admin FLE): solo i dati visibili a questo account; ⚪ non verificate = mai mancanti.");
     righe.push("Consegnate: " + R.consegnate + "/" + R.lette + (R.recuperate ? " · Recuperate dal server: " + R.recuperate : "") + (R.nonVerificate ? " (+" + R.nonVerificate + " non verificate)" : ""), "Ultimo controllo: " + (at ? dataCompleta(at) : "non disponibile"), "");
     // 1.3.5 (collaudo XR): significato del numero generale e consegne per competizione (stessi dati dell'Area Admin)
     if (CC && CC.comps.length) {
@@ -8532,7 +8586,7 @@
   }
   function disegnaAdmin(errore, avvio) {
     if (!pannello) return;
-    var h = "<div class='cd'><button class='x' data-a='indietro'>INDIETRO</button><div class='t1'>AREA ADMIN</div><div class='mu'>Fanta Vice Mister Safari " + VERSIONE + "</div></div>";
+    var h = "<div class='cd'><button class='x' data-a='indietro'>INDIETRO</button><div class='t1'>AREA ADMIN</div><div class='mu'>Fanta Vice Mister Safari " + VERSIONE_VISIBILE + "</div></div>";
     if (!adminSbloccato()) {
       h += "<div class='cd'><div class='lb'>CODICE ADMIN</div><input id='fvm-codice' autocomplete='off' autocapitalize='characters' style='width:100%;margin-top:10px;padding:12px;border-radius:12px;border:1px solid #2a4370;background:#0a1524;color:#fff;font-size:16px'>" +
         (errore ? "<div style='color:#f87171;margin-top:8px'>" + esc(errore) + "</div>" : "") +
@@ -8541,8 +8595,9 @@
       // PROVA15 (sicurezza): dati e comandi FLE SOLO se pertinenti (Leghe Fantacalcio, o Fantaclub con lega del circuito) e SOLO con il
       // ruolo di amministratore FLE CONFERMATO dal sito per questo accesso (lettura riservata agli amministratori accettata nell'ultimo
       // controllo dello stesso contesto). Ruolo non verificabile = nessun riepilogo amministrativo. Il codice FVM NON da questo ruolo.
+      // ADM1: il codice Admin FVM basta per il riepilogo; il ruolo FLE sceglie solo la lettura (cumulativa o partita per partita)
       var am = controlloFleAdminAmmesso(), DF0 = am.ok ? datiFle() : null, ruolo = DF0 && DF0.mostrato ? ruoloFleDi(DF0.mostrato) : "";
-      var DF = DF0 || { mostrato: null }, R = am.ok && ruolo === "amministratore" ? riepilogoFle(DF.mostrato) : null, ora = Date.now(), CC = R ? consegneSicure(DF.mostrato) : null;
+      var DF = DF0 || { mostrato: null }, R = am.ok ? riepilogoFle(DF.mostrato) : null, ora = Date.now(), CC = R ? consegneSicure(DF.mostrato) : null;
       if (!am.ok) h += "<div class='cd'><div class='lb'>FUNZIONI FLE NON DISPONIBILI</div><div class='mu' style='margin-top:6px'>" + esc(am.testo) + "</div></div>";
       if (am.ok) {
       h += "<div class='lb' style='margin:4px 0 6px'>CONTROLLO FLE (TUTTE LE SQUADRE)</div>";
@@ -8585,7 +8640,7 @@
         });
         h += "<div class='mu' style='font-size:11px;margin:4px 2px 8px'>Fonte: FantaLegaEuropa-FLE (league/status, competizioni, calendario, formazioni). Nessun calcolo di jolly o penalità.</div>";
         h += "<button class='bt' data-a='turni'>CONSEGNE FLE PER COMPETIZIONE E TURNO</button>";
-      } else if (!avvio) h += "<button class='bt oro' data-a='controlla'>CONTROLLA SU FLE (TUTTE LE SQUADRE)</button><div class='mu' style='font-size:12px;margin:4px 2px'>Sola lettura: il controllo verifica anche se il sito riconosce questo account come amministratore FLE. Senza quella conferma il riepilogo non viene mostrato.</div>";
+      } else if (!avvio) h += "<button class='bt oro' data-a='controlla'>CONTROLLA SU FLE (TUTTE LE SQUADRE)</button><div class='mu' style='font-size:12px;margin:4px 2px'>Sola lettura: lettura completa se il sito la concede a questo account, altrimenti partita per partita con i soli dati visibili al tuo account.</div>";
       } // PROVA15: fine della parte FLE (solo se pertinente)
       // PROVA14: tolto il pulsante di prova PROVA PASSAGGIO FANTACLUB (1.1.0, dati fittizi): il passaggio vero resta per il controllo Fantaclub
       h += "<button class='bt' data-a='ufficiale'>CONSEGNE UFFICIALI DELLE LEGHE</button>";
@@ -8614,7 +8669,7 @@
           if (cd) { cd.classList.toggle("aperta"); el.textContent = cd.classList.contains("aperta") ? "NASCONDI SQUADRE ▴" : "MOSTRA SQUADRE ▾"; }
         }
         // PROVA15: condivisione dei dati FLE solo nelle stesse condizioni della loro visualizzazione (pertinenti e ruolo confermato)
-        if ((a === "comp_wa" || a === "whatsapp") && !(controlloFleAdminAmmesso().ok && ruoloFleDi(datiFle().mostrato) === "amministratore")) { log("CONDIVIDI FLE", { esito: "non consentita", motivo: "dati FLE non pertinenti o ruolo non confermato" }); return; }
+        if ((a === "comp_wa" || a === "whatsapp") && !controlloFleAdminAmmesso().ok) { log("CONDIVIDI FLE", { esito: "non consentita", motivo: "dati FLE non pertinenti" }); return; } // ADM1: nessun requisito sul ruolo FLE
         if (a === "comp_wa") {
           var DFw = datiFle(), tw = testoWhatsappComp(consegneSicure(DFw.mostrato), Number(el.getAttribute("data-c")), inizioGiornataFle(DFw.mostrato && DFw.mostrato.mstr));
           log("CONDIVIDI COMPETIZIONE", { comp: Number(el.getAttribute("data-c")), esito: tw ? "foglio di condivisione" : "dato non disponibile" });
@@ -8879,7 +8934,7 @@
   }
   function condividiDiagnosi() {
     var righe = leggi("diag", []).map(testoDiagnosi);
-    var testo = "Fanta Vice Mister Safari " + VERSIONE + " · diagnosi\n" + navigator.userAgent.replace(/\s+/g, " ").slice(0, 160) + "\n";
+    var testo = "Fanta Vice Mister Safari " + etichettaVersione(VERSIONE) + " (" + VERSIONE + ") · diagnosi\n" + navigator.userAgent.replace(/\s+/g, " ").slice(0, 160) + "\n";
     var spazio = DIAG_LIMITE - testo.length - 300; // margine per le righe "… omesse"
     var scelte = {}, usato = 0, i;
     // 0) 1.3.5-RC2: identita dell'account, verifica della squadra e autorizzazione FLE per prime (fino a circa un terzo dello spazio)
