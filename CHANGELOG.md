@@ -3,6 +3,13 @@
 Per ogni versione: numero, data, novità, correzioni, limitazioni note.
 iPhone (Safari): il riepilogo breve della versione più recente è anche in `aggiornamento.json` (riquadro AGGIORNA ORA).
 
+## iPhone (Safari) 1.3.6 rev. 2 (revisione tecnica 1.3.6.2) — 26 ottobre 2026
+**Correzioni**
+- Invio FLE: le classifiche Ranking (Ranking di Lega, Ranking per Club) e le competizioni di natura incerta non sono mai punto di ingresso
+  né destinazione dell'invio: lo Switch si legge sulla competizione realmente giocata. Se non ne resta nessuna, nessun invio.
+**Note**
+- Numero mostrato invariato (1.3.6). Collaudata su iPhone: invio FLE, modulo, Switch, ordine panchina, storico.
+
 ## iPhone (Safari) 1.3.6 rev. 1 (revisione tecnica 1.3.6.1) — ottobre 2026
 **Correzioni**
 - Area Admin: con il codice Admin FVM il controllo FLE di tutte le squadre, le consegne per competizione e turno e la condivisione

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fanta Vice Mister
 // @description  Fanta Vice Mister per Safari (iPhone e Mac) e browser PC: ordine della panchina, controllo e invio su FLE, area admin.
-// @version      1.3.6.1
+// @version      1.3.6.2
 // @updateURL    https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @downloadURL  https://raw.githubusercontent.com/fabrizioercole70/FantaViceMister/main/FantaViceMister.user.js
 // @match        https://leghe.fantacalcio.it/*
@@ -24,7 +24,7 @@
   if (window.__FVM_SAFARI__) return;
   window.__FVM_SAFARI__ = true;
 
-  var VERSIONE = "1.3.6.1"; // 1.3.6.1: numero TECNICO (confronti di aggiornamento, dati salvati); visibile 1.3.6
+  var VERSIONE = "1.3.6.2"; // 1.3.6.2 (rev. 2): Ranking mai destinazione FLE · 1.3.6.1: numero TECNICO (confronti di aggiornamento, dati salvati); visibile 1.3.6
   var VERSIONE_VISIBILE = "1.3.6";
   // «1.3.6.1» -> «1.3.6 rev. 1» (riquadro aggiornamenti e diagnosi); numeri a 3 cifre invariati
   function etichettaVersione(v) { var p = String(v || "").split("."); return p.length === 4 && /^\d+$/.test(p[3]) && Number(p[3]) > 0 ? p.slice(0, 3).join(".") + " rev. " + Number(p[3]) : String(v || ""); }
@@ -6870,7 +6870,8 @@
           (function prossima() {
             if (i >= comps.length) {
               if (trovate.length) return scegliCompetizione(task, trovate, w);
-              task.lista = comps.map(function (c) { return { id: Number(c.id), name: c.name }; });
+              task.lista = comps.filter(function (c) { return naturaCompetizione({ id: c.id, name: c.name }) === "obbligo"; }).map(function (c) { return { id: Number(c.id), name: c.name }; });
+              if (!task.lista.length) { w.chiudi(); return erroreControllo("Nessuna competizione FLE giocabile", ["Nessuna competizione FLE con formazione trovata.", "Nessun salvataggio eseguito."], task); }
               task.idx = 0;
               return provaPagina(task);
             }
@@ -7004,6 +7005,12 @@
     return r ? { motivo: r, testo: "Controllo FLE da ripetere prima dell'invio: " + r + ". La rosa FLE potrebbe essere cambiata: tocca RIPETI CONTROLLO FLE (nessun salvataggio finora)." } : null;
   }
   function scegliCompetizione(task, lista, w) {
+    // 1.3.6.2 (come Android rev. 4): la squadra è iscritta anche ai Ranking (classifiche a punti, nessuna formazione): mai
+    // punto di ingresso né destinazione dell'invio; lo Switch si legge sulla competizione realmente giocata.
+    var tutteL = lista;
+    lista = lista.filter(function (x) { return naturaCompetizione({ id: x.id, name: x.name }) === "obbligo"; });
+    log("CONTROLLO FLE DESTINAZIONI", { trovate: tutteL.map(function (x) { return x.id; }), valide: lista.map(function (x) { return x.id; }) });
+    if (!lista.length) { w.chiudi(); return erroreControllo("Nessuna competizione FLE giocabile", ["La squadra risulta iscritta solo a classifiche Ranking o a competizioni da verificare: nessuna formazione da inviare.", "Nessun salvataggio eseguito."], task); }
     var c = lista[0];
     log("CONTROLLO FLE DESTINAZIONE", { comp: c.id, nome: c.name, possibili: lista.length });
     task.fase = "lineup"; task.comp = c.id; task.compName = c.name; task.lista = null;
