@@ -1,0 +1,69 @@
+# Fanta Vice Mister per Mac: compilazione e prove automatiche su runner macOS di GitHub (gratis su repository pubblico).
+# Avvio SOLO manuale (scheda Actions → «FVM Mac» → Run workflow). Nessuna Release: i file restano come artifact scaricabili.
+# Firma ad-hoc gratuita (identity "-"): nessun certificato Apple, nessuna notarizzazione.
+# Il progetto Mac sta nella cartella mac/ del repository (separata da Windows, Android e Safari).
+name: FVM Mac
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+defaults:
+  run:
+    working-directory: mac
+jobs:
+  mac:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15         # Apple Silicon
+          - arch: x64
+            runner: macos-15-intel   # Intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Dipendenze
+        run: npm install --no-audit --no-fund
+      - name: Controllo: nessun file di anteprima nel pacchetto
+        run: |
+          rm -f ANTEPRIMA_LOCALE
+          node -e "const b=require('./package.json').build.files;if(b.some(f=>/ANTEPRIMA|test|anteprima/i.test(f)))process.exit(1)"
+      - name: Compilazione (${{ matrix.arch }})
+        run: npx electron-builder --mac --${{ matrix.arch }} --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - name: Integrità pacchetti e firma ad-hoc
+        run: |
+          set -e
+          ls -la dist
+          APP=$(ls -d dist/mac*/"Fanta Vice Mister.app" | head -1)
+          echo "APP=$APP" >> $GITHUB_ENV
+          codesign --verify --deep --strict --verbose=2 "$APP"
+          codesign -dv "$APP" 2>&1 | grep -E "Signature|Identifier|Format"
+          lipo -archs "$APP/Contents/MacOS/Fanta Vice Mister"
+          npx --yes @electron/asar list "$APP/Contents/Resources/app.asar" | tee asar.txt
+          ! grep -qi "ANTEPRIMA_LOCALE\|PROVA_LOCALE" asar.txt
+          spctl -a -vv "$APP" || echo "Gatekeeper: app non notarizzata (atteso, costo zero)"
+          for f in dist/*.dmg dist/*.zip; do shasum -a 256 "$f"; done | tee dist/SHA256.txt
+          DMG=$(ls dist/*.dmg | head -1); hdiutil verify "$DMG"
+          hdiutil attach "$DMG" -nobrowse -mountpoint /tmp/fvmdmg; ls /tmp/fvmdmg; test -d "/tmp/fvmdmg/Fanta Vice Mister.app"; hdiutil detach /tmp/fvmdmg
+      - name: Avvio e prova dell'interfaccia (sola lettura)
+        run: |
+          mkdir -p risultati-${{ matrix.arch }}
+          "$APP/Contents/MacOS/Fanta Vice Mister" --remote-debugging-port=9222 > app.log 2>&1 &
+          node test/prova_interfaccia.js 9222 risultati-${{ matrix.arch }} | tee risultati-${{ matrix.arch }}/riepilogo.txt || (echo "--- log app"; tail -50 app.log; exit 1)
+          pkill -f "Fanta Vice Mister" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: FantaViceMister-Mac-${{ matrix.arch }}
+          path: |
+            mac/dist/*.dmg
+            mac/dist/*.zip
+            mac/dist/SHA256.txt
+            mac/risultati-${{ matrix.arch }}/
+            mac/app.log

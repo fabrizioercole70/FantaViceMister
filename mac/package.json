@@ -1,0 +1,25 @@
+{
+  "name": "fanta-vice-mister-mac",
+  "productName": "Fanta Vice Mister",
+  "version": "1.3.6",
+  "description": "Fanta Vice Mister per Mac",
+  "main": "main.js",
+  "author": "Fabrizio Ercole",
+  "scripts": { "start": "electron .", "dist": "electron-builder --mac --publish never" },
+  "devDependencies": { "electron": "45.0.0", "electron-builder": "26.18.0" },
+  "build": {
+    "appId": "it.fantavicemister.mac",
+    "productName": "Fanta Vice Mister",
+    "files": ["main.js", "preload.js", "aggiornamento.js", "fvm/**", "icona.png"],
+    "mac": {
+      "category": "public.app-category.sports",
+      "icon": "icona.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "target": [{ "target": "dmg" }, { "target": "zip" }]
+    },
+    "dmg": { "artifactName": "FantaViceMister-Mac-${version}-rev3-${arch}.dmg" },
+    "artifactName": "FantaViceMister-Mac-${version}-rev3-${arch}.${ext}"
+  }
+}

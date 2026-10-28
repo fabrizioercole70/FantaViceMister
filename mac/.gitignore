@@ -1,0 +1,7 @@
+node_modules/
+dist/
+anteprima_win/
+risultati-*/
+ANTEPRIMA_LOCALE
+PROVA_LOCALE
+*.log
