@@ -1,0 +1,12 @@
+{
+  "versione": "1.3.6.3",
+  "data": "28/10/2026",
+  "url": "https://github.com/fabrizioercole70/FantaViceMister/releases/download/windows-v1.3.6-rev3/FantaViceMister-Windows-1.3.6-rev3-portatile.exe",
+  "sha256": "2087fa31f6234c1759c8c7a0434bb948dd342da5c02cba0419fc70f8a525419f",
+  "dimensione": 111211536,
+  "novita": [
+    "AGGIORNA ORA: aggiornamento automatico con verifica del file e ripristino della versione precedente in caso di problemi",
+    "Nuova grafica per schermi larghi 16:9: Home su due colonne, Area Admin e schermate FLE centrate",
+    "Invio FLE: le competizioni Ranking non sono mai destinazione dell'invio"
+  ]
+}
