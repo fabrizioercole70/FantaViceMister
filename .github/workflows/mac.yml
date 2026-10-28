@@ -20,16 +20,10 @@ jobs:
   mac:
     strategy:
       fail-fast: false
+      # Elenco dei runner calcolato dalla scelta all'avvio: con «arm64» parte SOLO Apple Silicon (M1, macos-14),
+      # con «x64» SOLO Intel (macos-15-intel), con «entrambe» tutti e due.
       matrix:
-        # exclude agisce solo sulle combinazioni di base (arch), non su quelle aggiunte da include
-        arch: [arm64, x64]
-        include:
-          - arch: arm64
-            runner: macos-14         # Apple Silicon M1 (arm64): macos-15 arm64 spesso senza posti liberi
-          - arch: x64
-            runner: macos-15-intel   # Intel
-        exclude:
-          - arch: ${{ inputs.architetture == 'arm64' && 'x64' || inputs.architetture == 'x64' && 'arm64' || 'nessuna' }}
+        include: ${{ fromJSON(inputs.architetture == 'arm64' && '[{"arch":"arm64","runner":"macos-14"}]' || inputs.architetture == 'x64' && '[{"arch":"x64","runner":"macos-15-intel"}]' || '[{"arch":"arm64","runner":"macos-14"},{"arch":"x64","runner":"macos-15-intel"}]') }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
