@@ -20,10 +20,11 @@ jobs:
   mac:
     strategy:
       fail-fast: false
-      # Elenco dei runner calcolato dalla scelta all'avvio: con «arm64» parte SOLO Apple Silicon (M1, macos-14),
+      # Elenco dei runner calcolato dalla scelta all'avvio: con «arm64» parte SOLO la compilazione Apple Silicon,
+      # eseguita sul Mac Intel (i Mac Apple gratuiti di GitHub non erano disponibili: 4 annullamenti il 28/10),
       # con «x64» SOLO Intel (macos-15-intel), con «entrambe» tutti e due.
       matrix:
-        include: ${{ fromJSON(inputs.architetture == 'arm64' && '[{"arch":"arm64","runner":"macos-14"}]' || inputs.architetture == 'x64' && '[{"arch":"x64","runner":"macos-15-intel"}]' || '[{"arch":"arm64","runner":"macos-14"},{"arch":"x64","runner":"macos-15-intel"}]') }}
+        include: ${{ fromJSON(inputs.architetture == 'arm64' && '[{"arch":"arm64","runner":"macos-15-intel"}]' || inputs.architetture == 'x64' && '[{"arch":"x64","runner":"macos-15-intel"}]' || '[{"arch":"arm64","runner":"macos-15-intel"},{"arch":"x64","runner":"macos-15-intel"}]') }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -55,7 +56,14 @@ jobs:
           for f in dist/*.dmg dist/*.zip; do shasum -a 256 "$f"; done | tee dist/SHA256.txt
           DMG=$(ls dist/*.dmg | head -1); hdiutil verify "$DMG"
           hdiutil attach "$DMG" -nobrowse -mountpoint /tmp/fvmdmg; ls /tmp/fvmdmg; test -d "/tmp/fvmdmg/Fanta Vice Mister.app"; hdiutil detach /tmp/fvmdmg
+      # Un Mac Intel non puo eseguire un'app arm64: avvio e interfaccia risultano NON VERIFICATI, mai OK
+      - name: "Avvio e interfaccia arm64: NON VERIFICATI"
+        if: matrix.arch == 'arm64'
+        run: |
+          mkdir -p risultati-arm64
+          echo "NV avvio app e test dell'interfaccia · NON VERIFICATI: pacchetto arm64 compilato su Mac Intel ($(uname -m)), nessun Mac Apple Silicon disponibile" | tee risultati-arm64/riepilogo.txt
       - name: "Avvio e prova dell'interfaccia (sola lettura)"
+        if: matrix.arch == 'x64'
         run: |
           mkdir -p risultati-${{ matrix.arch }}
           "$APP/Contents/MacOS/Fanta Vice Mister" --remote-debugging-port=9222 > app.log 2>&1 &
