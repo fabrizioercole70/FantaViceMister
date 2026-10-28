@@ -26,17 +26,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Dipendenze
+      - name: "Dipendenze"
         run: npm install --no-audit --no-fund
-      - name: Controllo: nessun file di anteprima nel pacchetto
+      - name: "Controllo: nessun file di anteprima nel pacchetto"
         run: |
           rm -f ANTEPRIMA_LOCALE
           node -e "const b=require('./package.json').build.files;if(b.some(f=>/ANTEPRIMA|test|anteprima/i.test(f)))process.exit(1)"
-      - name: Compilazione (${{ matrix.arch }})
+      - name: "Compilazione (${{ matrix.arch }})"
         run: npx electron-builder --mac --${{ matrix.arch }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      - name: Integrità pacchetti e firma ad-hoc
+      - name: "Integrità pacchetti e firma ad-hoc"
         run: |
           set -e
           ls -la dist
@@ -51,7 +51,7 @@ jobs:
           for f in dist/*.dmg dist/*.zip; do shasum -a 256 "$f"; done | tee dist/SHA256.txt
           DMG=$(ls dist/*.dmg | head -1); hdiutil verify "$DMG"
           hdiutil attach "$DMG" -nobrowse -mountpoint /tmp/fvmdmg; ls /tmp/fvmdmg; test -d "/tmp/fvmdmg/Fanta Vice Mister.app"; hdiutil detach /tmp/fvmdmg
-      - name: Avvio e prova dell'interfaccia (sola lettura)
+      - name: "Avvio e prova dell'interfaccia (sola lettura)"
         run: |
           mkdir -p risultati-${{ matrix.arch }}
           "$APP/Contents/MacOS/Fanta Vice Mister" --remote-debugging-port=9222 > app.log 2>&1 &
