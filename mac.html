@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#102d59">
+<title>Fanta Vice Mister Mac</title>
+<meta name="description" content="Fanta Vice Mister: l'assistente per consegnare la formazione nella tua lega e su FantaLegaEuropa (FLE).">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="apple-touch-icon.png">
+<style>
+:root{
+  --navy:#102d59;
+  --navy2:#0a1e3d;
+  --gold:#e8bd52;
+  --gold2:#f3d16c;
+  --green:#258a49;
+  --white:#f8f6ef;
+  --muted:#c9d2df;
+  --line:#31517b;
+}
+*{box-sizing:border-box}
+body{margin:0;background:linear-gradient(180deg,var(--navy2),#07162c);color:var(--white);
+font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;min-height:100vh}
+main{max-width:560px;margin:auto;padding:calc(18px + env(safe-area-inset-top)) 18px calc(30px + env(safe-area-inset-bottom))}
+.logo{width:110px;height:110px;margin:0 auto 12px;border-radius:24px;overflow:hidden;box-shadow:0 8px 22px rgba(0,0,0,.35)}
+.logo img{width:100%;height:100%;object-fit:cover;display:block}
+h1{text-align:center;font-size:27px;margin:0 0 5px;color:var(--gold2)}
+.sub{text-align:center;color:var(--white);margin:0 0 18px;font-weight:600;line-height:1.4}
+.card{background:rgba(16,45,89,.96);border:2px solid var(--line);border-radius:22px;padding:20px 20px 22px;
+box-shadow:0 10px 28px rgba(0,0,0,.25);margin-bottom:16px}
+.card.mine{border-color:var(--gold)}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.kicker{font-size:13px;color:var(--gold2);font-weight:900;letter-spacing:.08em}
+.badge{display:none;font-size:12px;font-weight:900;color:#102d59;background:var(--gold2);border-radius:20px;padding:3px 10px}
+.card.mine .badge{display:inline-block}
+.ver{display:inline-block;font-size:12px;font-weight:900;color:#0b2346;background:#7ee2a0;border-radius:20px;padding:3px 10px;margin-left:6px;vertical-align:middle}
+.card h2{font-size:23px;margin:6px 0 8px;color:#fff}
+.card p{line-height:1.45;color:#f7f8fb;margin:0 0 6px}
+ol.steps{margin:14px 0 4px;padding:0;list-style:none;counter-reset:s}
+ol.steps li{counter-increment:s;display:flex;gap:12px;align-items:center;padding:7px 0;font-size:17px;font-weight:700}
+ol.steps li::before{content:counter(s);flex:0 0 32px;height:32px;border-radius:50%;background:var(--gold2);color:#102d59;
+display:flex;align-items:center;justify-content:center;font-weight:900}
+.note{background:#0b2346;border:1px solid var(--line);border-radius:14px;padding:12px 14px;color:#e8edf5;font-size:14px;line-height:1.45;margin-top:12px}
+a.btn,span.btn{width:100%;border:0;border-radius:15px;padding:15px 16px;font-size:17px;font-weight:900;text-align:center;text-decoration:none;display:block;margin-top:14px}
+.primary{background:linear-gradient(180deg,var(--gold2),var(--gold));color:#102d59}
+.secondary{background:#173f74;color:#fff;border:1px solid #3f68a0}
+.guide{background:#f8f6ef;color:#102d59;border:2px solid var(--gold)}
+.off{background:#13294a;color:var(--muted);border:1px dashed var(--line);cursor:default}
+details{background:rgba(16,45,89,.96);border:1px solid var(--line);border-radius:16px;margin-bottom:10px;overflow:hidden}
+summary{list-style:none;cursor:pointer;padding:15px 18px;font-weight:900;font-size:16px;color:#fff;display:flex;justify-content:space-between;gap:10px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"+";color:var(--gold2);font-size:20px;line-height:1}
+details[open] summary::after{content:"–"}
+.dc{padding:0 18px 16px;line-height:1.5;color:#eef2f8;font-size:15px}
+.dc ul{margin:6px 0;padding-left:20px}.dc li{margin:4px 0}
+.mode{border-left:4px solid var(--gold2);padding:6px 10px;margin:8px 0;background:#0b2346;border-radius:8px}
+h3.sez{color:var(--gold2);font-size:15px;letter-spacing:.06em;margin:22px 4px 10px}
+a{color:var(--gold2)}
+footer{text-align:center;color:var(--muted);font-size:12px;margin-top:22px;line-height:1.5}
+.dati{font-size:14px;color:#c9d2df;line-height:1.5}
+</style>
+</head>
+<body>
+<main>
+  <div class="logo"><img src="apple-touch-icon.png" alt="Fanta Vice Mister"></div>
+  <h1>Fanta Vice Mister per Mac</h1>
+  <p class="sub">Versione <b>1.3.6 rev. 3</b> · app per Mac con macOS 12 o successivo, stesse funzioni della versione Windows.</p>
+
+  <section class="card">
+    <h2>1. Scarica</h2>
+    <p>Il download funziona con qualsiasi browser: <b>Safari</b>, <b>Chrome</b>, <b>Firefox</b> o altri. Il file finisce nella cartella <b>Download</b>.</p>
+    <p>Scegli il file adatto al tuo Mac: menu  › <b>Informazioni su questo Mac</b>. Se alla voce <b>Chip</b> leggi «Apple M1», «M2», «M3», «M4»… scegli il primo pulsante; se alla voce <b>Processore</b> leggi «Intel» scegli il secondo.</p>
+    <a class="btn primary" href="https://github.com/fabrizioercole70/FantaViceMister/releases/download/mac-v1.3.6-rev3/FantaViceMister-Mac-1.3.6-rev3-arm64.dmg">Mac con chip Apple (M1, M2, M3, M4…)</a>
+    <a class="btn secondary" href="https://github.com/fabrizioercole70/FantaViceMister/releases/download/mac-v1.3.6-rev3/FantaViceMister-Mac-1.3.6-rev3-x64.dmg" style="margin-top:8px">Mac con processore Intel</a>
+    <div class="note"><b>Stato delle verifiche</b><br>
+      • <b>Intel</b>: collaudata su macOS (installazione dal file .dmg, avvio, Home, Area Admin), firma e file verificati.<br>
+      • <b>Chip Apple</b>: compilata e verificata (firma, architettura, integrità del file .dmg), con lo stesso identico codice della versione Intel, ma <b>non ancora avviata su un Mac con chip Apple</b>. Se qualcosa non va, segnalalo all'Admin: nel frattempo puoi usare la versione Intel, che sui Mac con chip Apple funziona tramite Rosetta (macOS la propone al primo avvio).</div>
+    <details style="margin-top:12px"><summary>Controllo dei file (SHA-256)</summary><div class="dc" style="word-break:break-all;font-size:13px">
+      Chip Apple (.dmg): e6d463e7f21e0e2fcffb4622510dc1c6e40b99111be1de4469602af479500258<br>
+      Intel (.dmg): 9de65e5b4fee9618d5107d663aab040b27fc2d717bd96169a628e2779c0a16f9<br>
+      Nel Terminale: <code>shasum -a 256 ~/Downloads/FantaViceMister-Mac-*.dmg</code></div></details>
+  </section>
+
+  <section class="card">
+    <h2>2. Installa</h2>
+    <ol class="dati">
+      <li>Apri il file <b>.dmg</b> scaricato.</li>
+      <li>Trascina <b>Fanta Vice Mister</b> nella cartella <b>Applicazioni</b>.</li>
+      <li>Espelli il disco «Fanta Vice Mister» (icona nel Finder).</li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <h2>3. Primo avvio</h2>
+    <p>L'app è gratuita e non ha la firma a pagamento di Apple: al primo avvio macOS la blocca e mostra un avviso. È normale. <b>Prima controlla la provenienza</b>: il file deve essere stato scaricato da questa pagina ufficiale (indirizzo <b>fabrizioercole70.github.io/FantaViceMister</b>, download da <b>github.com/fabrizioercole70/FantaViceMister</b>). Poi fai così, <b>una sola volta</b>:</p>
+    <ol class="dati">
+      <li>Apri <b>Fanta Vice Mister</b> da Applicazioni: compare l'avviso; premi <b>Fine</b> (o OK).</li>
+      <li>Apri <b>Impostazioni di Sistema</b> › <b>Privacy e sicurezza</b>.</li>
+      <li>Scorri in basso: accanto a «Fanta Vice Mister è stato bloccato» premi <b>Apri comunque</b> e conferma con la password del Mac.</li>
+    </ol>
+    <p>Dai successivi avvii l'app si apre normalmente. Scarica il file solo da questa pagina ufficiale.</p>
+  </section>
+
+  <section class="card">
+    <h2>4. Accesso e utilizzo</h2>
+    <ul>
+      <li>Si apre la pagina ufficiale di <b>Leghe Fantacalcio</b>: entra con username e password di Fantacalcio. Le credenziali restano sui siti ufficiali; l'accesso resta attivo ai prossimi avvii.</li>
+      <li>Il bottone tondo <b>FVM</b> sul bordo destro apre la Home: CAMBIA LEGA, formazione e panchina con lo <b>switch dei calciatori</b>, invio <b>LEGA + FLE</b>, <b>SOLO LEGA</b> o <b>SOLO FLE</b>, consegne ufficiali, storico invii e Area Admin.</li>
+      <li>A finestra grande la Home si dispone su <b>due colonne</b>; se la rimpicciolisci torna su una colonna.</li>
+      <li>Copia e incolla con <b>⌘C</b> / <b>⌘V</b> (anche ⌘X e ⌘A). Il menu <b>Fanta Vice Mister</b> in alto offre Indietro, Ricarica, Leghe Fantacalcio e Fantaclub.</li>
+      <li><b>CHIUDI</b> nella Home esce dall'account e chiude l'app; lo storico resta sul Mac.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Aggiornamenti</h2>
+    <p>All'avvio l'app controlla da sola se esiste una versione più recente. Quando esce, nella Home compare <b>AGGIORNAMENTO DISPONIBILE</b> con le novità. <b>AGGIORNA ORA</b> chiede conferma e apre questa pagina nel browser (sul Mac l'app non si sostituisce da sola): scarica il nuovo file e trascina l'app in Applicazioni scegliendo <b>Sostituisci</b>. Accesso, impostazioni e storico restano sul Mac. Dopo la sostituzione può essere necessario ripetere una volta «Apri comunque».</p>
+  </section>
+
+
+  <p style="text-align:center;margin-top:16px"><a href="./index.html">← Torna a Fanta Vice Mister</a></p>
+  <footer>FantaLegaEuropa · Fanta Vice Mister · Mac 1.3.6 rev. 3</footer>
+</main>
+</body>
+</html>
