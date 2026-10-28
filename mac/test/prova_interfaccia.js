@@ -7,7 +7,8 @@ const porta = process.argv[2] || '9222', out = process.argv[3] || 'risultati';
 fs.mkdirSync(out, { recursive: true });
 const attesa = (ms) => new Promise((r) => setTimeout(r, ms));
 const esiti = [], errori = [];
-function esito(nome, ok, dettaglio) { esiti.push({ prova: nome, esito: ok ? 'OK' : 'NO', dettaglio: dettaglio || '' }); console.log((ok ? 'OK ' : 'NO ') + nome + (dettaglio ? ' · ' + dettaglio : '')); }
+// ok: true = OK, false = NO, 'NV' = non verificabile (controllo non eseguito davvero: mai un falso OK)
+function esito(nome, ok, dettaglio) { const e = ok === 'NV' ? 'NON VERIFICABILE' : ok ? 'OK' : 'NO'; esiti.push({ prova: nome, esito: e, dettaglio: dettaglio || '' }); console.log((ok === 'NV' ? 'NV ' : ok ? 'OK ' : 'NO ') + nome + (dettaglio ? ' · ' + dettaglio : '')); }
 
 async function pagina() {
   for (let i = 0; i < 60; i++) {
@@ -43,10 +44,12 @@ async function pagina() {
   esito('ponte aggiornamenti presente', !!I.ponte);
   esito('sistema operativo del test', true, /Mac OS X/.test(I.ua) ? 'macOS (vero)' : 'NON macOS (anteprima)');
   const stato = await val('window.fvmWindows.statoAggiornamento().then(s=>JSON.stringify(s))');
-  esito('controllo aggiornamenti mac.json risponde', !!stato, (stato || '').slice(0, 160));
+  const S = JSON.parse(stato || '{}');
+  // mac.json non ancora pubblicato: il controllo fallisce in modo previsto → NON VERIFICABILE, non OK
+  esito('controllo aggiornamenti mac.json', !stato ? false : S.errore ? 'NV' : true, S.errore ? 'manifest non raggiungibile (' + S.errore + '): mac.json non pubblicato' : 'installata ' + S.installata + ', nuova ' + (S.nuova ? S.nuova.versione : 'nessuna'));
 
   // banner cookie del sito: «Continua senza accettare» (nessun consenso facoltativo), se presente
-  const TROVA = '[...document.querySelectorAll("a,button,span,div,p")].filter(x=>/^\\s*Continua senza accettare\\s*$/i.test(x.textContent||"")&&x.offsetParent).pop()';
+  const TROVA = '[...document.querySelectorAll("a,button,span,div,p")].filter(x=>/^\\s*(Continua senza accettare|Continue without accepting)\\s*$/i.test(x.textContent||"")&&x.offsetParent).pop()';
   let cookie = 'assente';
   for (let i = 0; i < 10; i++) {
     const r = await val('(function(){var e=' + TROVA + ';if(!e)return "assente";e.click();return "cliccato"})()');
@@ -54,7 +57,9 @@ async function pagina() {
     await attesa(1500);
     if (cookie === 'cliccato' && (await val('!(' + TROVA + ')'))) { cookie = 'chiuso'; break; }
   }
-  esito('banner cookie del sito', cookie !== 'cliccato', cookie);
+  // OK solo se il banner e stato chiuso o non e mai comparso; ricontrollo finale che non sia ancora visibile
+  const ancora = await val('!!(' + TROVA + ')');
+  esito('banner cookie del sito', !ancora && cookie !== 'cliccato', ancora ? 'ancora visibile: foto non attendibili' : cookie);
   // apre la Home FVM: pulsante tondo FVM, se presente (alcune pagine di accesso non lo mostrano)
   const aperta = await val('(function(){var r=' + RADICE + ';if(!r)return "radice assente";var f=r.querySelector(".fab");if(!f)return "pulsante FVM assente";f.click();return "ok"})()');
   await attesa(2500);
